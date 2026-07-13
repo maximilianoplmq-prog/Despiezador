@@ -1,0 +1,2617 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>Despiezador</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#0f172a}
+#root{min-height:100vh}
+#loading{position:fixed;inset:0;background:#0f172a;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#fff;font-family:sans-serif;font-size:16px;z-index:9999}
+</style>
+</head>
+<body>
+<div id="loading"><div style="font-size:48px">🪵</div><div>Cargando...</div></div>
+<div id="root"></div>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.6/babel.min.js"></script>
+<script>window.console.warn=function(m){if(m&&m.includes&&m.includes("Babel"))return;console.warn.apply(console,arguments);};</script>
+<script type="text/babel" data-presets="react" data-type="module">
+const {useState,useRef,useEffect,useCallback}=React;
+
+// ── BIENVENIDA + BASE DE PRECIOS ──
+
+// ── Base de datos de precios (persistente con localStorage) ──
+function usePreciosDB() {
+  const KEY = "despiezador_precios_v1";
+  const defaultData = {
+    materiales: [
+      { id:1, nombre:"Melamina blanca 15mm", precio:0, unidad:"hoja" },
+      { id:2, nombre:"Melamina blanca 18mm", precio:0, unidad:"hoja" },
+      { id:3, nombre:"MDF 15mm", precio:0, unidad:"hoja" },
+      { id:4, nombre:"Triplay 18mm", precio:0, unidad:"hoja" },
+    ],
+    herrajes: [
+      { id:10, nombre:"Bisagra 35mm clip", precio:0, unidad:"par" },
+      { id:11, nombre:"Corredera 45cm", precio:0, unidad:"par" },
+      { id:12, nombre:"Corredera 50cm", precio:0, unidad:"par" },
+      { id:13, nombre:"Jalador barra", precio:0, unidad:"pza" },
+      { id:14, nombre:"Perno confirmante", precio:0, unidad:"pza" },
+    ]
+  };
+  const [data, setData] = useState(()=>{
+    try { const s=localStorage.getItem(KEY); return s?JSON.parse(s):defaultData; }
+    catch(e){ return defaultData; }
+  });
+  function save(newData){ setData(newData); try{localStorage.setItem(KEY,JSON.stringify(newData));}catch(e){} }
+  function updatePrecio(tipo, id, precio){
+    const updated = {...data, [tipo]: data[tipo].map(item=>item.id===id?{...item,precio:parseFloat(precio)||0}:item)};
+    save(updated);
+  }
+  function addItem(tipo, nombre, unidad){
+    const newId = Date.now();
+    const updated = {...data, [tipo]: [...data[tipo], {id:newId,nombre,precio:0,unidad}]};
+    save(updated);
+  }
+  function removeItem(tipo, id){
+    const updated = {...data, [tipo]: data[tipo].filter(item=>item.id!==id)};
+    save(updated);
+  }
+  return { data, updatePrecio, addItem, removeItem };
+}
+
+// ── Pantalla de precios ──
+function PantallaPreciosDB({ db, onClose }) {
+  const [tab, setTab] = useState("materiales");
+  const [newNombre, setNewNombre] = useState("");
+  const [newUnidad, setNewUnidad] = useState("hoja");
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#f1f5f9",zIndex:300,display:"flex",flexDirection:"column",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+      <div style={{background:"#0f172a",padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:20}}>💾</span>
+          <div>
+            <div style={{color:"#f8fafc",fontWeight:800,fontSize:15}}>Base de precios</div>
+            <div style={{color:"#94a3b8",fontSize:11}}>Se usa para calcular costos reales</div>
+          </div>
+        </div>
+        <button onClick={onClose} style={{padding:"6px 12px",borderRadius:7,background:"#334155",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:600}}>← Volver</button>
+      </div>
+      {/* Tabs */}
+      <div style={{display:"flex",background:"#1e293b",flexShrink:0}}>
+        {["materiales","herrajes"].map(t=>(
+          <button key={t} onClick={()=>setTab(t)}
+            style={{flex:1,padding:"10px",border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+              background:tab===t?"#f1f5f9":"#1e293b",color:tab===t?"#0f172a":"#94a3b8",
+              borderBottom:tab===t?"3px solid #2563eb":"3px solid transparent"}}>
+            {t==="materiales"?"🪵 Materiales":"🔩 Herrajes"}
+          </button>
+        ))}
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:16,display:"flex",flexDirection:"column",gap:8}}>
+        {db.data[tab].map(item=>(
+          <div key={item.id} style={{background:"#fff",borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 1px 3px #0001"}}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,fontSize:13,color:"#0f172a"}}>{item.nombre}</div>
+              <div style={{fontSize:11,color:"#94a3b8"}}>por {item.unidad}</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:4}}>
+              <span style={{fontSize:12,color:"#64748b"}}>$</span>
+              <input type="number" inputMode="decimal" value={item.precio||""}
+                onChange={e=>db.updatePrecio(tab,item.id,e.target.value)}
+                placeholder="0.00"
+                style={{width:80,padding:"6px 8px",borderRadius:6,border:"1.5px solid #cbd5e1",fontSize:14,textAlign:"right",outline:"none",fontFamily:"inherit"}}/>
+            </div>
+            <button onClick={()=>db.removeItem(tab,item.id)}
+              style={{padding:"4px 8px",background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:5,cursor:"pointer",fontSize:12}}>×</button>
+          </div>
+        ))}
+        {/* Agregar nuevo */}
+        <div style={{background:"#fff",borderRadius:10,padding:"12px 14px",boxShadow:"0 1px 3px #0001"}}>
+          <div style={{fontSize:11,fontWeight:600,color:"#64748b",marginBottom:8}}>+ Agregar suministro</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <input value={newNombre} onChange={e=>setNewNombre(e.target.value)}
+              placeholder="Nombre del suministro"
+              style={{flex:2,minWidth:140,padding:"7px 10px",borderRadius:6,border:"1.5px solid #cbd5e1",fontSize:12,outline:"none"}}/>
+            <select value={newUnidad} onChange={e=>setNewUnidad(e.target.value)}
+              style={{flex:1,minWidth:80,padding:"7px 8px",borderRadius:6,border:"1.5px solid #cbd5e1",fontSize:12,background:"#fff"}}>
+              <option value="hoja">hoja</option>
+              <option value="par">par</option>
+              <option value="pza">pza</option>
+              <option value="ml">ml</option>
+              <option value="rollo">rollo</option>
+            </select>
+            <button onClick={()=>{if(newNombre.trim()){db.addItem(tab,newNombre.trim(),newUnidad);setNewNombre("");}}}
+              style={{padding:"7px 14px",borderRadius:6,background:"#0f172a",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:700}}>
+              Agregar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Pantalla de bienvenida ──
+function Bienvenida({ db, onProyectoListo }) {
+  const [descripcion, setDescripcion] = useState("");
+  const [porcentajeGanancia, setPorcentajeGanancia] = useState("40");
+  const [loading, setLoading] = useState(false);
+  const [showPrecios, setShowPrecios] = useState(false);
+  const [error, setError] = useState(null);
+
+  const [imagen, setImagen] = useState(null); // base64
+  const [imagenPreview, setImagenPreview] = useState(null);
+
+  function handleImagen(e) {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const b64 = ev.target.result.split(",")[1];
+      setImagen(b64);
+      setImagenPreview(ev.target.result);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function generarProyecto() {
+    if (!descripcion.trim() && !imagen) return;
+    setLoading(true); setError(null);
+
+    const preciosMat = db.data.materiales.filter(m=>m.precio>0).map(m=>`${m.nombre}: $${m.precio}/${m.unidad}`).join(", ");
+    const preciosHer = db.data.herrajes.filter(h=>h.precio>0).map(h=>`${h.nombre}: $${h.precio}/${h.unidad}`).join(", ");
+    const contextPrecios = preciosMat||preciosHer ? `\nPrecios:\n${preciosMat?'Materiales: '+preciosMat:''}${preciosHer?'\nHerrajes: '+preciosHer:''}` : '';
+
+    const systemMsg = `Sos un experto en carpintería modular. Analizás la imagen y/o descripción y devolvés SOLO un JSON válido (sin texto, sin markdown):
+{"modulos":[{"nombre":"string","ancho":"number","alto":"number","profundidad":"number","repisas":"number","refuerzos":"number","lateralesMedios":"number","cantCajones":"number","altoCajon":"number","cantPuertas":"number","zoclo":false}],"espesor":15,"material":"liso","costoEstimado":0,"precioVenta":0,"notas":"string"}
+Si hay imagen con medidas, extraé las medidas exactas. Para espesor usá 15 o 18. Si hay precios disponibles calculá costos con ${porcentajeGanancia}% de ganancia.`;
+
+    // Build message content
+    const contentParts = [];
+    if (imagen) {
+      contentParts.push({ type:"image", source:{ type:"base64", media_type:"image/jpeg", data:imagen }});
+    }
+    const textContent = (descripcion.trim()||"Analizá la imagen y extrae los módulos con sus medidas.") + contextPrecios;
+    contentParts.push({ type:"text", text: textContent });
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-6",
+          max_tokens:1500,
+          system: systemMsg,
+          messages:[{ role:"user", content: contentParts }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content&&data.content[0]?data.content[0].text:"";
+      const clean = text.replace(/```json|```/g,"").trim();
+      const proyecto = JSON.parse(clean);
+      onProyectoListo(proyecto);
+    } catch(e) {
+      setError("No se pudo generar el proyecto. Verificá tu conexión o intentá de nuevo.");
+    }
+    setLoading(false);
+  }
+
+  if (showPrecios) return <PantallaPreciosDB db={db} onClose={()=>setShowPrecios(false)}/>;
+
+  return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0f172a 0%,#1e3a5f 100%)",fontFamily:"'Inter','Segoe UI',sans-serif",display:"flex",flexDirection:"column"}}>
+      {/* Header */}
+      <div style={{padding:"48px 24px 24px",textAlign:"center"}}>
+        <div style={{fontSize:52,marginBottom:8}}>🪵</div>
+        <div style={{color:"#f8fafc",fontWeight:900,fontSize:26,letterSpacing:"-0.02em"}}>Despiezador</div>
+        <div style={{color:"#94a3b8",fontSize:13,marginTop:4}}>Diseño inteligente de muebles modulares</div>
+      </div>
+
+      <div style={{flex:1,padding:"0 20px 32px",display:"flex",flexDirection:"column",gap:16,maxWidth:500,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
+
+        {/* Imagen */}
+        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:16,padding:16,border:"1px solid rgba(255,255,255,0.1)"}}>
+          <div style={{color:"#e2e8f0",fontWeight:700,fontSize:14,marginBottom:8}}>📸 Subí una imagen <span style={{color:"#64748b",fontWeight:400,fontSize:12}}>(opcional)</span></div>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>Render, plano o boceto con medidas — la IA lee las medidas automáticamente</div>
+          {imagenPreview ? (
+            <div style={{position:"relative"}}>
+              <img src={imagenPreview} alt="preview" style={{width:"100%",borderRadius:10,maxHeight:200,objectFit:"cover"}}/>
+              <button onClick={()=>{setImagen(null);setImagenPreview(null);}}
+                style={{position:"absolute",top:8,right:8,background:"#dc2626",color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                × Quitar
+              </button>
+            </div>
+          ) : (
+            <label style={{display:"block",padding:"20px",borderRadius:10,border:"2px dashed rgba(255,255,255,0.2)",textAlign:"center",cursor:"pointer",background:"rgba(255,255,255,0.03)"}}>
+              <div style={{fontSize:28,marginBottom:6}}>📁</div>
+              <div style={{color:"#94a3b8",fontSize:13}}>Tocar para elegir imagen</div>
+              <div style={{color:"#475569",fontSize:11,marginTop:2}}>JPG, PNG, PDF</div>
+              <input type="file" accept="image/*" onChange={handleImagen} style={{display:"none"}}/>
+            </label>
+          )}
+        </div>
+
+        {/* Descripción */}
+        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:16,padding:16,border:"1px solid rgba(255,255,255,0.1)"}}>
+          <div style={{color:"#e2e8f0",fontWeight:700,fontSize:14,marginBottom:8}}>🤖 Describí el proyecto <span style={{color:"#64748b",fontWeight:400,fontSize:12}}>(opcional si subiste imagen)</span></div>
+          <textarea value={descripcion} onChange={e=>setDescripcion(e.target.value)}
+            placeholder={"Ej: Closet de 2.4m de alto × 1.8m de ancho. Con cajones abajo de 20cm, entrepaños en el medio y espacio para colgar arriba. Profundidad 60cm. Melamina blanca."}
+            style={{width:"100%",minHeight:100,padding:"12px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.05)",color:"#f8fafc",fontSize:13,resize:"vertical",fontFamily:"inherit",outline:"none",boxSizing:"border-box",lineHeight:1.6,WebkitTextFillColor:"#f8fafc"}}/>
+        </div>
+
+        {/* Ganancia */}
+        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:16,padding:16,border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>💰 Mi ganancia</div>
+            <div style={{color:"#94a3b8",fontSize:11,marginTop:2}}>% sobre el costo de materiales</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {["20","30","40","50"].map(p=>(
+              <button key={p} onClick={()=>setPorcentajeGanancia(p)}
+                style={{width:38,height:38,borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+                  background:porcentajeGanancia===p?"#2563eb":"rgba(255,255,255,0.1)",
+                  color:porcentajeGanancia===p?"#fff":"#94a3b8"}}>
+                {p}%
+              </button>
+            ))}
+            <div style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,0.1)",borderRadius:8,padding:"0 8px"}}>
+              <input type="number" inputMode="numeric" value={porcentajeGanancia} onChange={e=>setPorcentajeGanancia(e.target.value)}
+                style={{width:36,background:"transparent",border:"none",color:"#f8fafc",fontSize:12,fontWeight:700,textAlign:"center",outline:"none"}}/>
+              <span style={{color:"#94a3b8",fontSize:11}}>%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Precios */}
+        <button onClick={()=>setShowPrecios(true)}
+          style={{background:"rgba(255,255,255,0.07)",borderRadius:16,padding:"14px 16px",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",width:"100%",textAlign:"left"}}>
+          <div>
+            <div style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>💾 Base de precios</div>
+            <div style={{color:"#94a3b8",fontSize:11,marginTop:2}}>
+              {db.data.materiales.filter(m=>m.precio>0).length + db.data.herrajes.filter(h=>h.precio>0).length > 0
+                ? `${db.data.materiales.filter(m=>m.precio>0).length} materiales · ${db.data.herrajes.filter(h=>h.precio>0).length} herrajes con precio`
+                : "Registrá tus precios para calcular costos exactos"}
+            </div>
+          </div>
+          <span style={{color:"#64748b",fontSize:20}}>›</span>
+        </button>
+
+        {error && <div style={{background:"#fee2e2",color:"#dc2626",padding:12,borderRadius:10,fontSize:13}}>{error}</div>}
+
+        {/* Generar */}
+        <button onClick={generarProyecto} disabled={loading||(!descripcion.trim()&&!imagen)}
+          style={{padding:"16px",borderRadius:14,background:loading||(!descripcion.trim()&&!imagen)?"#334155":"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",border:"none",cursor:loading||(!descripcion.trim()&&!imagen)?"default":"pointer",fontSize:15,fontWeight:800,boxShadow:loading||(!descripcion.trim()&&!imagen)?"none":"0 4px 20px #2563eb55"}}>
+          {loading ? "⏳ Analizando y generando..." : imagen&&!descripcion.trim() ? "📸 Analizar imagen y generar" : "✨ Generar proyecto con IA"}
+        </button>
+
+        {/* Entrar sin IA */}
+        <button onClick={()=>onProyectoListo(null)}
+          style={{padding:"12px",borderRadius:10,background:"transparent",color:"#64748b",border:"1px solid rgba(255,255,255,0.1)",cursor:"pointer",fontSize:13,fontWeight:600}}>
+          Entrar manualmente →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── App demo ──
+function AppBienvenida() {
+  const db = usePreciosDB();
+  const [proyecto, setProyecto] = useState(null);
+  const [vista, setVista] = useState("bienvenida");
+
+  function handleProyectoListo(p) {
+    setProyecto(p);
+    setVista("app");
+  }
+
+  if (vista === "bienvenida") {
+    return <Bienvenida db={db} onProyectoListo={handleProyectoListo}/>;
+  }
+
+  // Simula la app con los datos generados
+  return (
+    <div style={{minHeight:"100vh",background:"#f1f5f9",fontFamily:"'Inter','Segoe UI',sans-serif",padding:20}}>
+      <button onClick={()=>setVista("bienvenida")} style={{padding:"8px 14px",borderRadius:8,background:"#0f172a",color:"#fff",border:"none",cursor:"pointer",fontSize:13,marginBottom:16}}>← Volver</button>
+      {proyecto ? (
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px #0001"}}>
+            <div style={{fontWeight:800,fontSize:15,color:"#0f172a",marginBottom:4}}>✅ Proyecto generado</div>
+            <div style={{fontSize:12,color:"#64748b"}}>Espesor: {proyecto.espesor}mm · Material: {proyecto.material}</div>
+            {proyecto.costoEstimado>0&&<div style={{marginTop:8,padding:"8px 10px",background:"#f0fdf4",borderRadius:8,fontSize:13,color:"#16a34a",fontWeight:700}}>
+              Costo estimado: ${proyecto.costoEstimado.toLocaleString()} → Precio venta: ${proyecto.precioVenta.toLocaleString()}
+            </div>}
+            {proyecto.notas&&<div style={{marginTop:8,fontSize:12,color:"#64748b"}}>{proyecto.notas}</div>}
+          </div>
+          {proyecto.modulos&&proyecto.modulos.map((m,i)=>(
+            <div key={"r"+i} style={{background:"#fff",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px #0001",borderLeft:"4px solid #2563eb"}}>
+              <div style={{fontWeight:700,color:"#0f172a",fontSize:14}}>{m.nombre}</div>
+              <div style={{fontSize:12,color:"#64748b",marginTop:4}}>
+                {m.ancho}×{m.alto}×{m.profundidad}mm
+                {m.repisas>0?` · ${m.repisas} entrepaños`:""}
+                {m.cantCajones>0?` · ${m.cantCajones} cajones`:""}
+                {m.cantPuertas>0?` · ${m.cantPuertas} puerta${m.cantPuertas>1?"s":""}`:""}
+              </div>
+            </div>
+          ))}
+          <div style={{background:"#0f172a",borderRadius:12,padding:14,textAlign:"center",color:"#94a3b8",fontSize:12}}>
+            En la app real estos módulos se cargan automáticamente con todos sus campos llenos
+          </div>
+        </div>
+      ) : (
+        <div style={{background:"#fff",borderRadius:12,padding:20,textAlign:"center",color:"#64748b"}}>
+          Entraste manualmente — aquí estaría la app normal vacía
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── DESPIEZADOR PRINCIPAL (adaptado para recibir proyecto de IA) ──
+
+const SHEET_SIZES = [
+  { label: "1220 × 2440 mm", w: 1220, h: 2440 },
+  { label: "1830 × 2500 mm", w: 1830, h: 2500 },
+];
+const THICKNESSES = [15, 18];
+
+// Colores por módulo para la lista final
+const MOD_COLORS = [
+  { bg:"#DBEAFE", border:"#2563EB", text:"#1e40af", tag:"M1" },
+  { bg:"#D1FAE5", border:"#059669", text:"#065f46", tag:"M2" },
+  { bg:"#FEF9C3", border:"#CA8A04", text:"#713f12", tag:"M3" },
+  { bg:"#FCE7F3", border:"#DB2777", text:"#831843", tag:"M4" },
+  { bg:"#E0E7FF", border:"#4F46E5", text:"#3730a3", tag:"M5" },
+  { bg:"#FFF7ED", border:"#EA580C", text:"#7c2d12", tag:"M6" },
+];
+
+// ─── CÁLCULO MÓDULO ───────────────────────────────────────────────────────────
+function calcModule(mod, T) {
+  const A  = parseInt(mod.ancho)        || 0;
+  const H  = parseInt(mod.alto)         || 0;
+  const P  = parseInt(mod.profundidad)  || 0;
+  const nRepisas    = parseInt(mod.repisas)     || 0;
+  const nRefuerzos  = parseInt(mod.refuerzos)   || 0;
+  const nCajones    = parseInt(mod.cantCajones) || 0;
+  const altoCaj     = parseInt(mod.altoCajon)   || 0;
+  const lateralAlto = H - T * 2;
+  const anchoInterno= A - T * 2;
+  const anchoCajon  = anchoInterno - 25 - T * 2 - 2;
+  const profCajon   = P - 100;
+
+  // Espacio entre entrepaños
+  const espacioEntrepaños = nRepisas > 0
+    ? Math.round((lateralAlto - (nCajones>0&&altoCaj>0 ? altoCaj*nCajones : 0)) / (nRepisas + 1))
+    : 0;
+
+  const piezas = [];
+  piezas.push({ nombre:"Techo / Piso", qty:2,     ancho:P,   alto:A,            tipo:"techo"        });
+  piezas.push({ nombre:"Lateral",  qty:2,          ancho:P,   alto:lateralAlto,  tipo:"lateral"      });
+  const nLatMed = parseInt(mod.lateralesMedios) || 0;
+  if (nRepisas  > 0) piezas.push({ nombre:"Entrepaño",     qty:nRepisas,  ancho:P,  alto:anchoInterno, tipo:"repisa",        espacioEnt: espacioEntrepaños });
+  if (nLatMed   > 0) piezas.push({ nombre:"Lateral Medio", qty:nLatMed,   ancho:P,  alto:lateralAlto,  tipo:"lateral_medio"  });
+  if (nRefuerzos> 0) piezas.push({ nombre:"Refuerzo",      qty:nRefuerzos,ancho:60, alto:anchoInterno, tipo:"refuerzo" });
+  if (nCajones > 0 && altoCaj > 0) {
+    piezas.push({ nombre:"Cajón – Frente/Fondo", qty:nCajones*2, ancho:altoCaj, alto:anchoCajon, tipo:"cajon_frente"  });
+    piezas.push({ nombre:"Cajón – Lateral",      qty:nCajones*2, ancho:altoCaj, alto:profCajon,  tipo:"cajon_lateral" });
+  }
+  // ── Puertas: (ancho ÷ cant) - 3  ×  alto - 4
+  const nPuertas = parseInt(mod.cantPuertas) || 0;
+  if (nPuertas > 0 && A > 0 && H > 0) {
+    const anchoPuerta = Math.round(A / nPuertas) - 3;
+    const altoPuerta  = H - 5;
+    piezas.push({ nombre:"Puerta", qty:nPuertas, ancho:anchoPuerta, alto:altoPuerta, tipo:"puerta",
+      nota:`(${A}÷${nPuertas})−3 × ${H}−5` });
+  }
+  // ── Frentes de cajón: ancho - 4  ×  alto indicado
+  const frentesCajones = mod.frentesCajones || [];
+  frentesCajones.forEach((fc, idx) => {
+    const altoFc = parseInt(fc.alto) || 0;
+    const qtyFc  = parseInt(fc.qty)  || 1;
+    if (altoFc > 0 && A > 0) {
+      piezas.push({ nombre:`Frente cajón ${idx+1}`, qty:qtyFc, ancho:A-4, alto:altoFc, tipo:"frente_cajon",
+        nota:`${A}−4=${A-4}` });
+    }
+  });
+  return piezas;
+}
+
+// ─── COLORES TIPO ─────────────────────────────────────────────────────────────
+const TIPO_COLOR = {
+  techo:         { fill:"#C8DFF5", stroke:"#2563EB", label:"#1e40af" },
+  lateral:       { fill:"#D1FAE5", stroke:"#059669", label:"#065f46" },
+  repisa:        { fill:"#FEF9C3", stroke:"#CA8A04", label:"#713f12" },
+  refuerzo:      { fill:"#FCE7F3", stroke:"#DB2777", label:"#831843" },
+  cajon_frente:  { fill:"#E0E7FF", stroke:"#4F46E5", label:"#3730a3" },
+  cajon_lateral: { fill:"#F0FDF4", stroke:"#16A34A", label:"#14532d" },
+  lateral_medio: { fill:"#FEF3C7", stroke:"#D97706", label:"#92400e" },
+  puerta:        { fill:"#E0F2FE", stroke:"#0284C7", label:"#0c4a6e" },
+  frente_cajon:  { fill:"#FDF4FF", stroke:"#A855F7", label:"#581c87" },
+};
+const LEYENDA_LABELS = {
+  techo:"Techo / Piso", lateral:"Lateral", repisa:"Entrepaño", refuerzo:"Refuerzo",
+  cajon_frente:"Cajón – Frente/Fondo", cajon_lateral:"Cajón – Lateral", lateral_medio:"Lateral Medio",
+  puerta:"Puerta", frente_cajon:"Frente cajón",
+};
+
+// ─── CANVAS ───────────────────────────────────────────────────────────────────
+function ModuleCanvas({ mod, thickness }) {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const A=parseInt(mod.ancho)||0,H=parseInt(mod.alto)||0,P=parseInt(mod.profundidad)||0,T=thickness;
+    if(!A||!H||!P){ctx.clearRect(0,0,canvas.width,canvas.height);return;}
+    const W=canvas.width,CH=canvas.height; ctx.clearRect(0,0,W,CH);
+    const pad=44,scale=Math.min((W-pad*2)/A,(CH-pad*2)/H);
+    const ox=(W-A*scale)/2,oy=(CH-H*scale)/2;
+    const AW=A*scale,Ts=T*scale,lHpx=(H-T*2)*scale;
+    const anchoInterno=A-T*2,innerW=anchoInterno*scale,innerX=ox+Ts;
+    const nRef=parseInt(mod.refuerzos)||0,Rs=60*scale;
+    const nCaj=parseInt(mod.cantCajones)||0,altoCaj=parseInt(mod.altoCajon)||0;
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    function dr(x,y,w,h,tipo,label,sub){
+      if(w<=0||h<=0)return;
+      const c=TIPO_COLOR[tipo]||TIPO_COLOR.techo;
+      ctx.fillStyle=c.fill;ctx.strokeStyle=c.stroke;ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();
+      ctx.fillStyle=c.label;
+      const fs=Math.max(6,Math.min(10,Math.min(w,h)/3.5));
+      ctx.font=`bold ${fs}px 'Inter',sans-serif`;
+      ctx.fillText(label,x+w/2,y+h/2-(sub?fs*0.75:0));
+      if(sub){ctx.font=`${fs*0.85}px 'Inter',sans-serif`;ctx.fillText(sub,x+w/2,y+h/2+fs*0.85);}
+    }
+    dr(ox,oy,AW,Ts,"techo","TECHO",`${A}×${P}`);
+    dr(ox,oy+Ts+lHpx,AW,Ts,"piso","PISO",`${A}×${P}`);
+    dr(ox,oy+Ts,Ts,lHpx,"lateral","LAT",`${H-T*2}×${P}`);
+    dr(ox+AW-Ts,oy+Ts,Ts,lHpx,"lateral","LAT",`${H-T*2}×${P}`);
+    const topEdge=nRef>=1?Rs:0,botEdge=nRef>=2?Rs:0;
+    if(nRef>=1)dr(innerX,oy+Ts,innerW,Rs,"refuerzo","REF","");
+    if(nRef>=2)dr(innerX,oy+Ts+lHpx-Rs,innerW,Rs,"refuerzo","REF","");
+    if(nRef>2){const step=(lHpx-Rs*2)/(nRef-1);for(let i=1;i<nRef-1;i++)dr(innerX,oy+Ts+Rs+step*i-Rs/2,innerW,Rs,"refuerzo","REF","");}
+    // Cajones: desde refuerzo inferior hacia arriba
+    const cajonesH = nCaj>0&&altoCaj>0 ? altoCaj*scale*nCaj : 0;
+    if(nCaj>0&&altoCaj>0){
+      const cajPx=altoCaj*scale;
+      for(let i=0;i<nCaj;i++){
+        const yAbs=oy+Ts+lHpx-botEdge-cajPx*(i+1);
+        if(yAbs<oy+Ts+topEdge)break;
+        dr(innerX+3,yAbs+2,innerW-6,cajPx-4,"cajon_frente",`C${i+1}`,`${altoCaj}mm`);
+      }
+    }
+    // Entrepaños: en zona libre (entre refuerzo sup y cajones/refuerzo inf)
+    const nRep=parseInt(mod.repisas)||0;
+    if(nRep>0){
+      const zonaLibreH=lHpx-topEdge-botEdge-cajonesH;
+      const step=zonaLibreH/(nRep+1);
+      for(let i=1;i<=nRep;i++)dr(innerX,oy+Ts+topEdge+step*i-Ts/2,innerW,Ts,"repisa","EPÑ","");
+    }
+    // Puertas — X cubre todo el módulo (techo a piso, de lateral a lateral)
+    const nPuertasC=parseInt(mod.cantPuertas)||0;
+    if(nPuertasC>0){
+      ctx.strokeStyle="#0284c7cc"; ctx.lineWidth=2;
+      ctx.beginPath();ctx.rect(ox+2,oy+2,AW-4,H*scale-4);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(ox+4,oy+4);ctx.lineTo(ox+AW-4,oy+H*scale-4);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(ox+AW-4,oy+4);ctx.lineTo(ox+4,oy+H*scale-4);ctx.stroke();
+      ctx.fillStyle="#0284c7";
+      ctx.font=`bold ${Math.max(9,Math.min(14,AW/8))}px 'Inter',sans-serif`;
+      ctx.textAlign="center";ctx.textBaseline="middle";
+      ctx.fillText(`${nPuertasC}x`,ox+AW/2,oy+H*scale/2);
+    }
+    // Laterales medios en canvas
+    const nLMcanvas=parseInt(mod.lateralesMedios)||0;
+    if(nLMcanvas>0){
+      const anchoInternoPx=anchoInterno*scale;
+      const stepLM=anchoInternoPx/(nLMcanvas+1);
+      const segMM=Math.round(anchoInterno/(nLMcanvas+1));
+      ctx.fillStyle="#d97706cc"; ctx.strokeStyle="#d97706"; ctx.lineWidth=Ts;
+      for(let i=1;i<=nLMcanvas;i++){
+        const lx=innerX+stepLM*i-Ts/2;
+        ctx.beginPath(); ctx.rect(lx,oy+Ts,Ts,lHpx); ctx.fill(); ctx.stroke();
+      }
+      ctx.lineWidth=1;
+      // etiquetas de espacio
+      ctx.fillStyle="#92400e"; ctx.font=`bold ${Math.max(7,Math.min(10,stepLM/5))}px 'Inter',sans-serif`;
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      for(let i=0;i<=nLMcanvas;i++){
+        const segCenterX=innerX+stepLM*i+stepLM/2;
+        ctx.fillText(`${segMM}`,segCenterX,oy+Ts+lHpx/2);
+      }
+    }
+    // Cotas
+    ctx.strokeStyle="#94a3b8";ctx.fillStyle="#64748b";ctx.font="10px 'Inter',sans-serif";ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(ox,oy-14);ctx.lineTo(ox+AW,oy-14);ctx.stroke();
+    ctx.fillText(`${A} mm`,ox+AW/2,oy-22);
+    ctx.save();ctx.translate(ox+AW+22,oy+(H*scale)/2);ctx.rotate(Math.PI/2);ctx.fillText(`${H} mm`,0,0);ctx.restore();
+  },[mod,thickness]);
+  return <canvas ref={canvasRef} width={320} height={440} style={{borderRadius:8,background:"#f8fafc",border:"1px solid #e2e8f0"}}/>;
+}
+
+// ─── TABLA PIEZAS (vista normal) ──────────────────────────────────────────────
+function PiezasTable({ piezas }) {
+  if(!piezas.length)return null;
+  const secciones=[
+    {label:"Estructura del módulo",tipos:["techo","lateral","lateral_medio","repisa","refuerzo"]},
+    {label:"Cajones",tipos:["cajon_frente","cajon_lateral"]},
+    {label:"Puertas y frentes",tipos:["puerta","frente_cajon"]},
+  ];
+  return(
+    <div style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <thead>
+          <tr style={{background:"#1e293b",color:"#fff"}}>
+            <th style={th}>Pieza</th><th style={th}>Cant.</th>
+            <th style={th}>Ancho (mm)</th><th style={th}>Alto (mm)</th>
+            <th style={th}>Espacio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {secciones.map(sec=>{
+            const filas=piezas.filter(p=>sec.tipos.includes(p.tipo));
+            if(!filas.length)return null;
+            return(
+              <span key={sec.label}>
+                <tr><td colSpan={5} style={{padding:"7px 12px",background:"#f1f5f9",fontSize:11,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>{sec.label}</td></tr>
+                {filas.map((p,i)=>{
+                  const col=TIPO_COLOR[p.tipo]||TIPO_COLOR.techo;
+                  return(
+                    <tr key={sec.label+i} style={{background:i%2===0?"#fff":"#f8fafc"}}>
+                      <td style={{padding:"8px 12px",fontWeight:700,fontSize:12,textAlign:"left",letterSpacing:"0.04em",display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{display:"inline-block",width:11,height:11,borderRadius:3,background:col.fill,border:"2px solid "+(col.stroke),flexShrink:0}}/>
+                        {p.nombre}
+                      </td>
+                      <td style={{padding:"8px 12px",fontWeight:700,fontSize:12,textAlign:"left",letterSpacing:"0.04em",textAlign:"center",fontWeight:700}}>{p.qty}</td>
+                      <td style={{padding:"8px 12px",fontWeight:700,fontSize:12,textAlign:"left",letterSpacing:"0.04em",textAlign:"right",fontFamily:"monospace",fontWeight:600}}>{p.ancho}</td>
+                      <td style={{padding:"8px 12px",fontWeight:700,fontSize:12,textAlign:"left",letterSpacing:"0.04em",textAlign:"right",fontFamily:"monospace",fontWeight:600}}>{p.alto}</td>
+                      <td style={{padding:"8px 12px",fontWeight:700,fontSize:12,textAlign:"left",letterSpacing:"0.04em",textAlign:"right",fontSize:11,color:"#6366f1",fontWeight:600}}>
+                        {p.espacioEnt ? (p.espacioEnt+" mm") : ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </span>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const th={padding:"8px 12px",fontWeight:700,fontSize:12,textAlign:"left",letterSpacing:"0.04em"};
+const td={padding:"6px 12px",borderBottom:"1px solid #e2e8f0"};
+
+// ─── INPUT ────────────────────────────────────────────────────────────────────
+function InputField({label,value,onChange,suffix}){
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+      <label style={{fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
+      <div style={{display:"flex",alignItems:"center"}}>
+        <input type="number" inputMode="numeric" pattern="[0-9]*" value={value} onChange={e=>onChange(e.target.value)}
+          style={{padding:"7px 10px",border:"1.5px solid #cbd5e1",borderRadius:suffix?"6px 0 0 6px":6,fontSize:14,width:"100%",outline:"none",background:"#fff",fontFamily:"inherit"}}/>
+        {suffix&&<span style={{padding:"7px 8px",background:"#f1f5f9",border:"1.5px solid #cbd5e1",borderLeft:"none",borderRadius:"0 6px 6px 0",fontSize:12,color:"#64748b"}}>{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── LAYOUT MUEBLES (React DOM — sin lag) ────────────────────────────────────
+function ModuloBoceto({ mod, w, h, scale, T, zocloAlto, isSelected }) {
+  const Tp = T * scale;
+  const iW = w - Tp * 2, iH = h - Tp * 2;
+  const nRef = parseInt(mod.refuerzos) || 0;
+  const rH = Math.max(2, 60 * scale);
+  const nCaj = parseInt(mod.cantCajones) || 0;
+  const aCaj = parseInt(mod.altoCajon) || 0;
+  const nRep = parseInt(mod.repisas) || 0;
+  const nLM  = parseInt(mod.lateralesMedios) || 0;
+  const botEdge = nRef >= 2 ? rH : 0;
+  const topEdge = nRef >= 1 ? rH : 0;
+  const cajTH = nCaj > 0 && aCaj > 0 ? aCaj * scale * nCaj : 0;
+  const zonaH = iH - topEdge - botEdge - cajTH;
+  const border = isSelected ? "2.5px solid #7c3aed" : "1.5px solid #334155";
+  const bg = isSelected ? "#f5f3ff" : "#fafaf9";
+
+  const lines = [];
+  // refuerzo sup
+  if (nRef >= 1) lines.push(<div key="rs" style={{position:"absolute",left:Tp,top:Tp,width:iW,height:rH,borderBottom:"1px solid #cc77aa88",boxSizing:"border-box"}}/>);
+  // refuerzo inf
+  if (nRef >= 2) lines.push(<div key="ri" style={{position:"absolute",left:Tp,bottom:Tp,width:iW,height:rH,borderTop:"1px solid #cc77aa88",boxSizing:"border-box"}}/>);
+  // cajones — apilados desde refuerzo inferior hacia arriba
+  for(let i=0;i<nCaj;i++){
+    const cjH=aCaj*scale;
+    const bottom=Tp+botEdge+cjH*i;
+    if(bottom+cjH>h-Tp)break;
+    lines.push(<div key={"cj"+i} style={{position:"absolute",left:Tp+2,bottom,width:iW-4,height:cjH-2,background:"#e0e7ff55",border:"1px solid #4f46e566",boxSizing:"border-box"}}/>);
+  }
+  // entrepaños
+  if(nRep>0){
+    const step=zonaH/(nRep+1);
+    for(let i=1;i<=nRep;i++){
+      const top=Tp+topEdge+step*i;
+      lines.push(<div key={"ep"+i} style={{position:"absolute",left:Tp,top,width:iW,height:1,background:"#ca8a0477"}}/>);
+    }
+  }
+  // laterales medios — verticales equidistantes dentro del ancho interno
+  if(nLM>0){
+    const anchoInt = parseInt(mod.ancho) - (15*2); // ancho interno
+    const stepPx = iW/(nLM+1);
+    const segMM = Math.round(anchoInt/(nLM+1));
+    for(let i=1;i<=nLM;i++){
+      const left = Tp + stepPx*i - Tp/2; // centrado como lateral real
+      lines.push(
+        <div key={"lm"+i} style={{position:"absolute",left,top:Tp,width:Math.max(2,Tp),height:iH,background:"#d97706aa",border:"1px solid #d97706",boxSizing:"border-box",display:"flex",alignItems:"center",justifyContent:"center",overflow:"visible"}}>
+          <span style={{position:"absolute",left:Tp+2,top:"50%",fontSize:Math.max(6,Math.min(9,stepPx/6)),color:"#92400e",fontWeight:700,whiteSpace:"nowrap",transform:"translateY(-50%)",background:"#fff9",padding:"0 2px",borderRadius:2}}>{segMM}</span>
+        </div>
+      );
+    }
+  }
+  // zóclo — dentro del espacio, en la parte inferior
+  const zH = mod.zoclo && zocloAlto > 0 ? zocloAlto * scale : 0;
+
+  return (
+    <div style={{position:"relative",width:w,height:h+zH,flexShrink:0}}>
+      <div style={{position:"absolute",top:0,left:0,width:w,height:h,background:bg,border,boxSizing:"border-box",overflow:"hidden"}}>
+        {/* laterales */}
+        <div style={{position:"absolute",left:0,top:Tp,width:Tp,height:iH,borderLeft:"1px solid #88888844",borderRight:"1px solid #88888844",boxSizing:"border-box"}}/>
+        <div style={{position:"absolute",right:0,top:Tp,width:Tp,height:iH,borderLeft:"1px solid #88888844",borderRight:"1px solid #88888844",boxSizing:"border-box"}}/>
+        {/* techo/piso */}
+        <div style={{position:"absolute",top:0,left:0,width:w,height:Tp,borderBottom:"1px solid #88888844",boxSizing:"border-box"}}/>
+        <div style={{position:"absolute",bottom:0,left:0,width:w,height:Tp,borderTop:"1px solid #88888844",boxSizing:"border-box"}}/>
+        {lines}
+        {/* Puertas — X cubre todo el módulo (de techo a piso, de lateral a lateral) */}
+        {(parseInt(mod.cantPuertas)||0)>0&&(()=>{
+          const np=parseInt(mod.cantPuertas);
+          const fs=Math.max(7,Math.min(13,w/8));
+          return(
+            <svg style={{position:"absolute",left:0,top:0,width:w,height:h,overflow:"hidden",pointerEvents:"none"}} viewBox={"0 0 "+w+" "+h}>
+              <rect x={2} y={2} width={w-4} height={h-4} fill="#e0f2fe44" stroke="#0284c7" strokeWidth={2}/>
+              <line x1={4} y1={4} x2={w-4} y2={h-4} stroke="#0284c7" strokeWidth={2}/>
+              <line x1={w-4} y1={4} x2={4} y2={h-4} stroke="#0284c7" strokeWidth={2}/>
+              <text x={w/2} y={h/2} textAnchor="middle" dominantBaseline="middle" fontSize={fs} fontWeight="bold" fill="#0284c7">{np}x</text>
+            </svg>
+          );
+        })()}
+        {/* label */}
+        <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+          <span style={{fontSize:Math.max(7,Math.min(11,w/9)),fontWeight:800,color:isSelected?"#5b21b6":"#1e293b",textAlign:"center",lineHeight:1.2}}>{mod.nombre}</span>
+          <span style={{fontSize:Math.max(6,Math.min(9,w/12)),color:isSelected?"#7c3aed":"#64748b",marginTop:1}}>{mod.ancho}×{mod.alto}</span>
+        </div>
+      </div>
+      {/* zóclo dentro del espacio — abajo del módulo */}
+      {zH > 0 && (
+        <div style={{position:"absolute",bottom:0,left:0,width:w,height:zH,background:"#fef9c3cc",border:"1.5px solid #ca8a04",boxSizing:"border-box",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{fontSize:Math.max(6,9),color:"#92400e",fontWeight:700}}>{zocloAlto}mm</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LayoutMuebles({ modules, espacioAnchoInit, espacioAltoInit, placedInit, nextIdInit, selectedInit, zocloAltoInit, onClose, onSaveEspacio, onSaveLayout }) {
+  const [eA, setEA] = useState(espacioAnchoInit||3600);
+  const [eH, setEH] = useState(espacioAltoInit||2600);
+  const [inA, setInA] = useState(String(espacioAnchoInit||3600));
+  const [inH, setInH] = useState(String(espacioAltoInit||2600));
+  const [zA, setZA] = useState(zocloAltoInit||100);
+  const [inZ, setInZ] = useState(String(zocloAltoInit||100));
+  const [placed,   setPlaced]   = useState(placedInit||[]);
+  const [nextId,   setNextId]   = useState(nextIdInit||1);
+  const [selected, setSelected] = useState(selectedInit||null);
+  const [modoLibre, setModoLibre] = useState(false);
+  const wrapRef  = useRef(null);
+  const dragging = useRef(null);
+  const placedRef= useRef(placed);
+  useEffect(()=>{ placedRef.current=placed; },[placed]);
+  const T=15, BENCH_H=88, CTOP=32;
+
+  const [sc, setSc] = useState(0.08);
+  useEffect(()=>{
+    function upd(){
+      const el=wrapRef.current; if(!el) return;
+      const W=el.clientWidth-24;
+      const H=el.clientHeight-CTOP-14;
+      setSc(Math.max(0.025, Math.min(W/eA, H/eH)));
+    }
+    upd();
+    window.addEventListener("resize",upd);
+    return()=>window.removeEventListener("resize",upd);
+  },[eA,eH]);
+
+  const sw=eA*sc, sh=eH*sc;
+  const placedIdx=placed.map(p=>p.modIdx);
+  const avail=modules.reduce((acc,mod,i)=>{
+    if(!placedIdx.includes(i)&&parseInt(mod.ancho)&&parseInt(mod.alto)) acc.push({mod,i});
+    return acc;
+  },[]);
+  const usedW=placed.reduce((s,p)=>s+(parseInt((modules[p.modIdx]||{}).ancho)||0),0);
+
+  function addMod(modIdx){
+    const mod=modules[modIdx]; if(!mod) return;
+    const mW=parseInt(mod.ancho)||0, mH=parseInt(mod.alto)||0;
+    const zH=mod.zoclo&&zA>0?zA:0;
+    let x,y;
+    if(modoLibre){ x=Math.max(0,(eA-mW)/2); y=Math.max(0,(eH-mH)/2); }
+    else { x=eA-mW-usedW; y=eH-mH-zH; }
+    const nid=nextId; setNextId(n=>n+1);
+    setPlaced(prev=>[...prev,{id:nid,modIdx,x,y}]);
+    setSelected(nid);
+  }
+
+  function delMod(id){
+    // Just remove — don't reposition remaining modules
+    setPlaced(prev=>prev.filter(p=>p.id!==id));
+    if(selected===id) setSelected(null);
+  }
+
+  function onDown(e,id,modIdx){
+    e.stopPropagation(); e.preventDefault();
+    const src=e.touches?e.touches[0]:e;
+    const cur=placedRef.current.find(p=>p.id===id)||{x:0,y:0};
+    dragging.current={id,modIdx,cx:src.clientX,cy:src.clientY,ox:cur.x,oy:cur.y};
+    setSelected(id);
+  }
+
+  useEffect(()=>{
+    const SNAP=12;
+    function onMove(e){
+      if(!dragging.current) return;
+      e.preventDefault();
+      const src=e.touches?e.touches[0]:e;
+      const ddx=(src.clientX-dragging.current.cx)/sc;
+      const ddy=(src.clientY-dragging.current.cy)/sc;
+      const mod=modules[dragging.current.modIdx]; if(!mod) return;
+      const mW=parseInt(mod.ancho)||0, mH=parseInt(mod.alto)||0;
+      const zH=mod.zoclo&&zA>0?zA:0;
+      const id=dragging.current.id;
+      let nx=dragging.current.ox+ddx;
+      let ny=dragging.current.oy+ddy;
+      if(!modoLibre) nx=dragging.current.ox;
+      if(Math.abs(nx)<SNAP) nx=0;
+      if(Math.abs(nx-(eA-mW))<SNAP) nx=eA-mW;
+      if(Math.abs(ny)<SNAP) ny=0;
+      if(Math.abs(ny-(eH-mH-zH))<SNAP) ny=eH-mH-zH;
+      placedRef.current.forEach(other=>{
+        if(other.id===id) return;
+        const om=modules[other.modIdx]; if(!om) return;
+        const oW=parseInt(om.ancho)||0, oH=parseInt(om.alto)||0;
+        if(modoLibre){
+          const overlapY=ny<other.y+oH&&ny+mH>other.y;
+          if(overlapY){
+            if(Math.abs((nx+mW)-other.x)<SNAP*2) nx=other.x-mW;
+            if(Math.abs(nx-(other.x+oW))<SNAP*2) nx=other.x+oW;
+            const ox2=nx<other.x+oW&&nx+mW>other.x;
+            if(ox2){const fl=(other.x+oW)-nx,fr=(nx+mW)-other.x;if(fl<fr)nx=other.x+oW;else nx=other.x-mW;}
+          }
+          if(Math.abs((nx+mW)-other.x)<SNAP) nx=other.x-mW;
+          if(Math.abs(nx-(other.x+oW))<SNAP) nx=other.x+oW;
+        }
+        if(Math.abs(ny-other.y)<SNAP) ny=other.y;
+        if(Math.abs((ny+mH)-(other.y+oH))<SNAP) ny=other.y+oH-mH;
+        if(Math.abs(ny-(other.y+oH))<SNAP) ny=other.y+oH;
+        if(Math.abs((ny+mH)-other.y)<SNAP) ny=other.y-mH;
+      });
+      nx=Math.max(0,Math.min(eA-mW,nx));
+      ny=Math.max(0,Math.min(eH-mH-zH,ny));
+      setPlaced(prev=>prev.map(p=>p.id===id?{...p,x:nx,y:ny}:p));
+    }
+    function onUp(){ dragging.current=null; }
+    window.addEventListener("mousemove",onMove,{passive:false});
+    window.addEventListener("mouseup",onUp);
+    window.addEventListener("touchmove",onMove,{passive:false});
+    window.addEventListener("touchend",onUp);
+    return()=>{
+      window.removeEventListener("mousemove",onMove);
+      window.removeEventListener("mouseup",onUp);
+      window.removeEventListener("touchmove",onMove);
+      window.removeEventListener("touchend",onUp);
+    };
+  },[sc,eA,eH,modules,zA,modoLibre]);
+
+  function apply(){
+    const a=parseInt(inA)||eA,h=parseInt(inH)||eH;
+    setEA(a);setEH(h);onSaveEspacio&&onSaveEspacio(a,h);
+  }
+  function goBack(){ onSaveLayout&&onSaveLayout(placed,nextId,selected,zA); onClose(); }
+
+  const zSegs=[];
+  if(zA>0){
+    const sorted=[...placed].sort((a,b)=>a.x-b.x);
+    let seg=null;
+    sorted.forEach(item=>{
+      const mod=modules[item.modIdx];
+      if(!mod||!mod.zoclo){if(seg){zSegs.push(seg);seg=null;}return;}
+      const mW=parseInt(mod.ancho)||0;
+      if(!seg){seg={x:item.x,w:mW};}
+      else if(Math.abs(item.x-(seg.x+seg.w))<5){seg.w+=mW;}
+      else{zSegs.push(seg);seg={x:item.x,w:mW};}
+    });
+    if(seg) zSegs.push(seg);
+  }
+
+  const dims=placed.map(item=>{
+    const mod=modules[item.modIdx]; if(!mod) return null;
+    return {x:item.x,w:parseInt(mod.ancho)||0,label:""+(parseInt(mod.ancho)||0),id:item.id};
+  }).filter(Boolean);
+
+  const totalSpan=placed.length>1?(()=>{
+    const lx=placed.reduce((mn,p)=>p.x<mn?p.x:mn, placed[0].x);
+    const rx=placed.reduce((mx,p)=>{
+      const pm=modules[p.modIdx];
+      const edge=p.x+(parseInt(pm?pm.ancho:0)||0);
+      return edge>mx?edge:mx;
+    }, 0);
+    return {x:lx,w:rx-lx,label:""+(rx-lx)+" total",tot:true};
+  })():null;
+
+  const selItem=placed.find(p=>p.id===selected);
+  const selMod=selItem?modules[selItem.modIdx]:null;
+
+  const snapLines=[];
+  if(selItem&&selMod){
+    const mH=parseInt(selMod.alto)||0;
+    placed.forEach(other=>{
+      if(other.id===selected) return;
+      const om=modules[other.modIdx]; if(!om) return;
+      const oH=parseInt(om.alto)||0;
+      if(Math.abs(selItem.y-other.y)<5) snapLines.push({y:other.y,color:"#22c55e",label:"top"});
+      if(Math.abs((selItem.y+mH)-(other.y+oH))<5) snapLines.push({y:other.y+oH-mH,color:"#22c55e",label:"bot"});
+    });
+  }
+
+  const span=placed.length>0?(()=>{
+    const lx=placed.reduce((mn,p)=>p.x<mn?p.x:mn, placed[0].x);
+    const rx=placed.reduce((mx,p)=>{
+      const pm=modules[p.modIdx];
+      const edge=p.x+(parseInt(pm?pm.ancho:0)||0);
+      return edge>mx?edge:mx;
+    }, 0);
+    return rx-lx;
+  })():0;
+  const libre=eA-span;
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"#0f172a",zIndex:200,display:"flex",flexDirection:"column",fontFamily:"'Inter','Segoe UI',sans-serif",userSelect:"none"}}>
+
+      {/* Header — una sola barra compacta */}
+      <div style={{flexShrink:0,background:"#0f172a",borderBottom:"1px solid #1e293b",padding:"16px 12px 10px",display:"flex",alignItems:"center",gap:6,flexWrap:"nowrap",overflowX:"auto"}}>
+        {/* Dimensiones + zóclo agrupados */}
+        <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
+          <input value={inA} onChange={e=>setInA(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const inputs=e.target.closest("div").querySelectorAll("input");const idx=Array.from(inputs).indexOf(e.target);if(inputs[idx+1])inputs[idx+1].focus();}}}
+            style={{width:56,padding:"5px 4px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#f8fafc",fontSize:12,textAlign:"center"}}
+            type="number" inputMode="numeric" pattern="[0-9]*" placeholder="Ancho"/>
+          <span style={{color:"#475569",fontSize:11,flexShrink:0}}>×</span>
+          <input value={inH} onChange={e=>setInH(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();apply();}}}
+            style={{width:56,padding:"5px 4px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#f8fafc",fontSize:12,textAlign:"center"}}
+            type="number" inputMode="numeric" pattern="[0-9]*" placeholder="Alto"/>
+          <button onClick={apply} style={{padding:"5px 10px",borderRadius:6,background:"#2563eb",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:700,flexShrink:0}}>OK</button>
+        </div>
+        {/* Separador */}
+        <div style={{width:1,height:28,background:"#334155",flexShrink:0}}/>
+        {/* Zóclo */}
+        <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+          <span style={{color:"#ca8a04",fontSize:11,fontWeight:700}}>Z</span>
+          <input value={inZ} onChange={e=>setInZ(e.target.value)} onBlur={()=>{const v=parseInt(inZ);if(v>0)setZA(v);}}
+            style={{width:44,padding:"5px 4px",borderRadius:6,border:"1px solid #ca8a04",background:"#1e293b",color:"#fbbf24",fontSize:12,textAlign:"center",fontWeight:700}}
+            type="number" inputMode="numeric" pattern="[0-9]*"/>
+          <span style={{color:"#64748b",fontSize:10,flexShrink:0}}>mm</span>
+        </div>
+        {/* Separador */}
+        <div style={{width:1,height:28,background:"#334155",flexShrink:0}}/>
+        {/* Modo */}
+        <button onClick={()=>setModoLibre(m=>!m)}
+          style={{padding:"5px 10px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,flexShrink:0,
+            background:modoLibre?"#7c3aed":"#475569",color:"#fff"}}>
+          {modoLibre?"🆓":"📏"}
+        </button>
+        {/* Volver */}
+        <button onClick={goBack} style={{marginLeft:"auto",padding:"5px 12px",borderRadius:6,background:"#334155",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,flexShrink:0}}>← Volver</button>
+      </div>
+      {/* Fila 2: info dinámica */}
+      <div style={{flexShrink:0,background:"#0f172a",borderBottom:"1px solid #1e293b",padding:"5px 12px",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{color:libre>=0?"#4ade80":"#f87171",fontWeight:700,fontSize:12,flexShrink:0}}>
+          {libre>=0?"✓ "+libre+"mm libre":"⚠ +"+Math.abs(libre)+"mm"}
+        </span>
+        {selItem&&<span style={{color:"#a78bfa",fontSize:11,fontWeight:600,flexShrink:0}}>y: {Math.round(selItem.y)}mm</span>}
+        <div style={{marginLeft:"auto",display:"flex",gap:6,flexShrink:0}}>
+          {selMod&&(
+            <button onClick={()=>delMod(selected)} style={{padding:"4px 10px",borderRadius:6,background:"#dc2626",color:"#fff",border:"none",cursor:"pointer",fontSize:11,fontWeight:700}}>
+              🗑 {selMod.nombre}
+            </button>
+          )}
+          <button onClick={()=>{setPlaced([]);setNextId(1);setSelected(null);}}
+            style={{padding:"4px 10px",borderRadius:6,background:"#475569",color:"#fff",border:"none",cursor:"pointer",fontSize:11,fontWeight:600}}>
+            🧹
+          </button>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0}}>
+
+        {/* Drawing area */}
+        <div ref={wrapRef} style={{flex:1,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",background:"#d1d9e0",minHeight:0,padding:(CTOP+4)+"px 48px 10px 16px",boxSizing:"border-box"}}>
+          <div style={{position:"relative",width:sw,flexShrink:0}}>
+            {/* Dim lines */}
+            <div style={{position:"relative",height:CTOP+4,width:sw}}>
+              {dims.map(d=>(
+                <div key={d.id} style={{position:"absolute",left:d.x*sc,width:Math.max(2,d.w*sc),top:20,height:8,
+                  borderLeft:"1.5px solid #475569",borderRight:"1.5px solid #475569",borderTop:"1.5px solid #475569",boxSizing:"border-box"}}>
+                  <span style={{position:"absolute",left:"50%",transform:"translateX(-50%)",top:-10,fontSize:10,fontWeight:600,color:"#1e293b",background:"#d1d9e0",padding:"0 3px",whiteSpace:"nowrap"}}>{d.label}</span>
+                </div>
+              ))}
+              {totalSpan&&(
+                <div style={{position:"absolute",left:totalSpan.x*sc,width:Math.max(2,totalSpan.w*sc),top:2,height:8,
+                  borderLeft:"2px solid #f59e0b",borderRight:"2px solid #f59e0b",borderTop:"2px solid #f59e0b",boxSizing:"border-box"}}>
+                  <span style={{position:"absolute",left:"50%",transform:"translateX(-50%)",top:-11,fontSize:10,fontWeight:800,color:"#f59e0b",background:"#d1d9e0",padding:"0 3px",whiteSpace:"nowrap"}}>{totalSpan.label}</span>
+                </div>
+              )}
+            </div>
+            {/* Space + right cota */}
+            <div style={{display:"flex",alignItems:"stretch"}}>
+              <div style={{position:"relative",width:sw,height:sh,background:"#fff",border:"2.5px solid #1e293b",overflow:"hidden",flexShrink:0,boxSizing:"border-box",boxShadow:"0 2px 16px #0002"}}>
+                <div style={{position:"absolute",bottom:0,left:0,width:"100%",height:4,background:"#1e293b",zIndex:20}}/>
+                {zSegs.map((seg,si)=>(
+                  <div key={si} style={{position:"absolute",bottom:0,left:seg.x*sc,width:seg.w*sc,height:zA*sc,background:"#fef9c3cc",border:"1px solid #ca8a04",boxSizing:"border-box",zIndex:6,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                    <span style={{fontSize:Math.max(7,Math.min(10,seg.w*sc/9)),color:"#92400e",fontWeight:700,whiteSpace:"nowrap"}}>{seg.w}mm</span>
+                  </div>
+                ))}
+                {snapLines.map((sl,i)=>(
+                  <div key={"r"+i} style={{position:"absolute",left:0,width:"100%",top:sl.y*sc,height:1.5,background:sl.color,zIndex:25,pointerEvents:"none"}}>
+                    <span style={{position:"absolute",right:2,top:-9,fontSize:8,color:sl.color,fontWeight:700,background:"#fff",padding:"0 2px",borderRadius:2}}>{sl.label}</span>
+                  </div>
+                ))}
+                {placed.map(item=>{
+                  const mod=modules[item.modIdx]; if(!mod) return null;
+                  const mW=parseInt(mod.ancho)||0, mH=parseInt(mod.alto)||0;
+                  const hasZ=mod.zoclo&&zA>0;
+                  return(
+                    <div key={item.id}
+                      style={{position:"absolute",left:item.x*sc,top:item.y*sc,width:mW*sc,height:mH*sc,
+                        cursor:modoLibre?"grab":"ns-resize",zIndex:selected===item.id?15:8,touchAction:"none"}}
+                      onMouseDown={e=>onDown(e,item.id,item.modIdx)}
+                      onTouchStart={e=>onDown(e,item.id,item.modIdx)}>
+                      <ModuloBoceto mod={mod} w={mW*sc} h={mH*sc} scale={sc} T={T} zocloAlto={hasZ?zA:0} isSelected={selected===item.id}/>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Right cota */}
+              <div style={{width:40,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <div style={{height:sh,borderTop:"1.5px solid #475569",borderBottom:"1.5px solid #475569",borderRight:"1.5px solid #475569",width:10,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{fontSize:10,color:"#1e293b",fontWeight:700,writingMode:"vertical-rl",transform:"rotate(180deg)",whiteSpace:"nowrap"}}>{eH}mm</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bench */}
+        {avail.length>0&&(
+          <div style={{height:BENCH_H,background:"#1e293b",borderTop:"2px solid #334155",flexShrink:0,display:"flex",alignItems:"center",overflowX:"auto",overflowY:"hidden",padding:"6px 10px",gap:7}}>
+            <span style={{color:"#475569",fontSize:9,fontWeight:700,textTransform:"uppercase",flexShrink:0,letterSpacing:"0.06em",writingMode:"vertical-rl",transform:"rotate(180deg)"}}>Banca</span>
+            {avail.map(({mod,i})=>{
+              const mc=MOD_COLORS[i%MOD_COLORS.length];
+              const ph=Math.min(64,BENCH_H-18);
+              const ps=Math.min(82/parseInt(mod.ancho),ph/parseInt(mod.alto));
+              const pw=parseInt(mod.ancho)*ps, phh=parseInt(mod.alto)*ps;
+              return(
+                <div key={"r"+i} onClick={()=>addMod(i)}
+                  style={{flexShrink:0,padding:"4px 5px",borderRadius:7,background:mc.bg,border:"1.5px solid "+(mc.border),cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,
+                    boxShadow:modoLibre?"0 0 0 2px #7c3aed88":"none",minWidth:pw+10}}>
+                  <ModuloBoceto mod={mod} w={pw} h={phh} scale={ps} T={T} zocloAlto={0} isSelected={false}/>
+                  <span style={{fontSize:8,fontWeight:700,color:mc.text,textAlign:"center",whiteSpace:"nowrap"}}>{mod.nombre}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── PROYECTO LISTO ───────────────────────────────────────────────────────────
+function ProyectoListo({ modules, thickness, cantoMapProp, setCantoMapProp, piezasExtra, onClose, onGoLayout }) {
+  const tipos = ["techo","lateral","lateral_medio","repisa","refuerzo","cajon_frente","cajon_lateral","puerta","frente_cajon"];
+  const cantoMap = cantoMapProp;
+  const setCantoMap = setCantoMapProp;
+  const [activeMod, setActiveMod] = useState(0);
+  // Canto for extra pieces: { idx: {a1,a2,h1,h2} }
+  const [cantoExtra, setCantoExtra] = useState({});
+  function togExtra(idx,key){
+    setCantoExtra(prev=>{
+      const cur={...(prev[idx]||{a1:false,a2:false,h1:false,h2:false})};
+      cur[key]=!cur[key];
+      return {...prev,[idx]:cur};
+    });
+  }
+
+  const allPiezas = [];
+  modules.forEach((m,mi)=>{
+    const ps=(parseInt(m.ancho)&&parseInt(m.alto)&&parseInt(m.profundidad))?calcModule(m,thickness):[];
+    ps.forEach(p=>allPiezas.push({...p,modIdx:mi}));
+  });
+
+  function mlMod(mi) {
+    const ps = (parseInt(modules[mi].ancho)&&parseInt(modules[mi].alto)&&parseInt(modules[mi].profundidad))?calcModule(modules[mi],thickness):[];
+    return ps.reduce((s,p) => {
+      const cv = (cantoMap[mi]||{})[p.tipo] || {};
+      const ladosAncho = (cv.a1?1:0) + (cv.a2?1:0);
+      const ladosAlto  = (cv.h1?1:0) + (cv.h2?1:0);
+      return s + (p.ancho/1000 * ladosAncho * p.qty) + (p.alto/1000 * ladosAlto * p.qty);
+    }, 0);
+  }
+  const totalML = modules.reduce((s,_,mi) => s + mlMod(mi), 0) +
+    (piezasExtra||[]).reduce((s,p,idx)=>{
+      const cv=cantoExtra[idx]||{};
+      const lA=(cv.a1?1:0)+(cv.a2?1:0);
+      const lH=(cv.h1?1:0)+(cv.h2?1:0);
+      return s+(p.ancho/1000*lA*p.qty)+(p.alto/1000*lH*p.qty);
+    },0);
+
+  function tog(mi, tipo, key) {
+    setCantoMap(prev => {
+      const cur = { ...(prev[mi]||{})[tipo] };
+      cur[key] = !cur[key];
+      return { ...prev, [mi]: { ...prev[mi], [tipo]: cur } };
+    });
+  }
+
+  function getPiezas(mi) {
+    const m = modules[mi];
+    return (parseInt(m.ancho)&&parseInt(m.alto)&&parseInt(m.profundidad)) ? calcModule(m,thickness) : [];
+  }
+
+  const uSt = (v1,v2) => {
+    if(v1&&v2) return {textDecoration:"underline",textDecorationStyle:"double",textDecorationColor:"#1d4ed8",fontWeight:800,color:"#1d4ed8"};
+    if(v1||v2) return {textDecoration:"underline",textDecorationStyle:"solid",textDecorationColor:"#1d4ed8",fontWeight:800,color:"#1d4ed8"};
+    return {fontWeight:700,color:"#1e293b"};
+  };
+  function chk(checked, onChange) {
+    return <input type="checkbox" checked={checked} onChange={onChange}
+      style={{width:20,height:20,accentColor:"#2563eb",cursor:"pointer",margin:0}}/>;
+  }
+  let lineNum = 0;
+
+  // Pre-compute canto selector rows (avoids IIFE in JSX)
+  const cantoPs = getPiezas(activeMod);
+  const cantoTipos = Array.from(new Set(cantoPs.map(p=>p.tipo)));
+  const cantoSelectorRows = cantoTipos.map((tipoCur,tiIdx) => {
+    const col = TIPO_COLOR[tipoCur];
+    const p0 = cantoPs.find(p=>p.tipo===tipoCur);
+    const defaultCv = (tipoCur==="puerta"||tipoCur==="frente_cajon") ? {a1:true,a2:true,h1:true,h2:true} : {};
+    const cv = (cantoMap[activeMod]||{})[tipoCur] || defaultCv;
+    return (
+      <div key={tipoCur} style={{display:"grid",gridTemplateColumns:"24px 22px 1fr 90px 44px 44px 44px 44px",gap:0,padding:"10px 10px",alignItems:"center",background:tiIdx%2===0?"#fff":"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>{tiIdx+1}.</div>
+        <span style={{display:"inline-block",width:13,height:13,borderRadius:3,background:col.fill,border:"2px solid "+(col.stroke)}}/>
+        <div style={{fontSize:12,fontWeight:700,color:"#1e293b",paddingRight:4}}>{LEYENDA_LABELS[tipoCur]}</div>
+        <div style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:"#1e293b",textAlign:"center",lineHeight:1.9}}>
+          {p0 && (
+            <span>
+              <span style={{textDecoration:cv.a1||cv.a2?"underline":"none",textDecorationStyle:cv.a1&&cv.a2?"double":"solid",textDecorationColor:"#1d4ed8",fontWeight:cv.a1||cv.a2?800:700,color:cv.a1||cv.a2?"#1d4ed8":"#1e293b"}}>{p0.ancho}</span>
+              <span style={{color:"#94a3b8",fontSize:10}}> × </span>
+              <span style={{textDecoration:cv.h1||cv.h2?"underline":"none",textDecorationStyle:cv.h1&&cv.h2?"double":"solid",textDecorationColor:"#1d4ed8",fontWeight:cv.h1||cv.h2?800:700,color:cv.h1||cv.h2?"#1d4ed8":"#1e293b"}}>{p0.alto}</span>
+            </span>
+          )}
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9"}}>{chk(!!cv.a1,()=>tog(activeMod,tipoCur,"a1"))}</div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9",borderRight:"1px solid #e2e8f0"}}>{chk(!!cv.a2,()=>tog(activeMod,tipoCur,"a2"))}</div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9"}}>{chk(!!cv.h1,()=>tog(activeMod,tipoCur,"h1"))}</div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9"}}>{chk(!!cv.h2,()=>tog(activeMod,tipoCur,"h2"))}</div>
+      </div>
+    );
+  });
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#f8fafc",zIndex:100,overflowY:"auto",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+      <div style={{background:"#0f172a",padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}} className="no-print">
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>🪚</span>
+          <div>
+            <div style={{color:"#f8fafc",fontWeight:800,fontSize:15}}>Cubrecanto</div>
+            <div style={{color:"#94a3b8",fontSize:11}}>{modules.length} módulo{modules.length>1?"s":""} · espesor {thickness}mm</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>window.print()} style={{padding:"7px 14px",borderRadius:8,background:"#2563eb",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:700}}>🖨️ PDF</button>
+          <button onClick={onGoLayout} style={{padding:"7px 11px",borderRadius:8,background:"#7c3aed",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:700}}>📐 Layout</button>
+          <button onClick={onClose} style={{padding:"7px 11px",borderRadius:8,background:"#334155",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:600}}>← Volver</button>
+        </div>
+      </div>
+      <div style={{background:"#0f172a",borderTop:"1px solid #1e293b",padding:"9px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:52,zIndex:9}} className="no-print">
+        <span style={{color:"#94a3b8",fontSize:12,fontWeight:600}}>Total cubre canto:</span>
+        <span style={{color:"#4ade80",fontWeight:800,fontSize:20}}>{totalML.toFixed(2)} ml</span>
+      </div>
+
+      <div style={{maxWidth:700,margin:"0 auto",padding:"16px 10px",display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #0001"}} className="no-print">
+          {modules.length > 1 && (
+            <div style={{display:"flex",gap:0,borderBottom:"2px solid #f1f5f9",overflowX:"auto"}}>
+              {modules.map((m,mi) => {
+                const mc = MOD_COLORS[mi%MOD_COLORS.length];
+                const isActive = activeMod === mi;
+                return (
+                  <button key={mi} onClick={()=>setActiveMod(mi)}
+                    style={{flex:"0 0 auto",padding:"10px 16px",border:"none",cursor:"pointer",background:isActive?mc.bg:"#f8fafc",borderBottom:isActive?"3px solid "+(mc.border):"3px solid transparent",fontWeight:isActive?800:500,fontSize:12,color:isActive?mc.text:"#64748b",display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:mc.bg,border:"2px solid "+(mc.border)}}/>
+                    {m.nombre}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div style={{background:"#1e293b",display:"grid",gridTemplateColumns:"24px 22px 1fr 90px 44px 44px 44px 44px",gap:0,padding:"0 10px",alignItems:"stretch"}}>
+            <div style={{color:"#94a3b8",fontSize:10,fontWeight:700,padding:"6px 0",display:"flex",alignItems:"center"}}>#</div>
+            <div/>
+            <div style={{color:"#94a3b8",fontSize:10,fontWeight:700,padding:"6px 4px",display:"flex",alignItems:"center"}}>Tipo</div>
+            <div style={{color:"#94a3b8",fontSize:10,fontWeight:700,padding:"6px 0",display:"flex",alignItems:"center",justifyContent:"center"}}>Medida</div>
+            <div style={{gridColumn:"span 2",borderLeft:"1px solid #334155",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+              <div style={{color:"#fff",fontSize:9,fontWeight:700,padding:"2px 0",borderBottom:"1px solid #334155",width:"100%",textAlign:"center"}}>Ancho</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",width:"100%"}}>
+                <div style={{color:"#64748b",fontSize:9,textAlign:"center",padding:"2px 0",borderRight:"1px solid #334155"}}>1</div>
+                <div style={{color:"#64748b",fontSize:9,textAlign:"center",padding:"2px 0"}}>2</div>
+              </div>
+            </div>
+            <div style={{gridColumn:"span 2",borderLeft:"1px solid #334155",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+              <div style={{color:"#fff",fontSize:9,fontWeight:700,padding:"2px 0",borderBottom:"1px solid #334155",width:"100%",textAlign:"center"}}>Alto</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",width:"100%"}}>
+                <div style={{color:"#64748b",fontSize:9,textAlign:"center",padding:"2px 0",borderRight:"1px solid #334155"}}>1</div>
+                <div style={{color:"#64748b",fontSize:9,textAlign:"center",padding:"2px 0"}}>2</div>
+              </div>
+            </div>
+          </div>
+          {cantoSelectorRows}
+        </div>
+        {/* Extra pieces canto */}
+        {(piezasExtra||[]).length>0&&(
+          <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #0001"}} className="no-print">
+            <div style={{background:"#be185d",padding:"8px 12px"}}>
+              <div style={{color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.06em"}}>✏️ Piezas manuales — Cubre canto</div>
+            </div>
+            <div style={{background:"#1e293b",display:"grid",gridTemplateColumns:"24px 1fr 90px 44px 44px 44px 44px",gap:0,padding:"0 10px",alignItems:"stretch"}}>
+              <div style={{color:"#94a3b8",fontSize:10,fontWeight:700,padding:"6px 0"}}>#</div>
+              <div style={{color:"#94a3b8",fontSize:10,fontWeight:700,padding:"6px 4px"}}>Nombre</div>
+              <div style={{color:"#94a3b8",fontSize:10,fontWeight:700,textAlign:"center",padding:"6px 0"}}>Medida</div>
+              <div style={{gridColumn:"span 2",borderLeft:"1px solid #334155",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                <div style={{color:"#fff",fontSize:9,fontWeight:700,padding:"2px 0",borderBottom:"1px solid #334155",width:"100%",textAlign:"center"}}>Ancho</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",width:"100%"}}>
+                  <div style={{color:"#64748b",fontSize:9,textAlign:"center",padding:"2px 0",borderRight:"1px solid #334155"}}>1</div>
+                  <div style={{color:"#64748b",fontSize:9,textAlign:"center",padding:"2px 0"}}>2</div>
+                </div>
+              </div>
+              <div style={{gridColumn:"span 2",borderLeft:"1px solid #334155",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                <div style={{color:"#fff",fontSize:9,fontWeight:700,padding:"2px 0",borderBottom:"1px solid #334155",width:"100%",textAlign:"center"}}>Alto</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",width:"100%"}}>
+                  <div style={{color:"#64748b",fontSize:9,textAlign:"center",padding:"2px 0",borderRight:"1px solid #334155"}}>1</div>
+                  <div style={{color:"#64748b",fontSize:9,textAlign:"center",padding:"2px 0"}}>2</div>
+                </div>
+              </div>
+            </div>
+            {(piezasExtra||[]).map((p,idx)=>{
+              const cv=cantoExtra[idx]||{a1:false,a2:false,h1:false,h2:false};
+              return(
+                <div key={idx} style={{display:"grid",gridTemplateColumns:"24px 1fr 90px 44px 44px 44px 44px",gap:0,padding:"10px 10px",alignItems:"center",background:idx%2===0?"#fff":"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
+                  <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>{idx+1}.</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#be185d",paddingRight:4}}>{p.nombre}</div>
+                  <div style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:"#1e293b",textAlign:"center",lineHeight:1.9}}>
+                    <span style={{textDecoration:cv.a1||cv.a2?"underline":"none",textDecorationStyle:cv.a1&&cv.a2?"double":"solid",textDecorationColor:"#1d4ed8",fontWeight:cv.a1||cv.a2?800:700,color:cv.a1||cv.a2?"#1d4ed8":"#1e293b"}}>{p.ancho}</span>
+                    <span style={{color:"#94a3b8",fontSize:10}}> × </span>
+                    <span style={{textDecoration:cv.h1||cv.h2?"underline":"none",textDecorationStyle:cv.h1&&cv.h2?"double":"solid",textDecorationColor:"#1d4ed8",fontWeight:cv.h1||cv.h2?800:700,color:cv.h1||cv.h2?"#1d4ed8":"#1e293b"}}>{p.alto}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9"}}>{chk(!!cv.a1,()=>togExtra(idx,"a1"))}</div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9",borderRight:"1px solid #e2e8f0"}}>{chk(!!cv.a2,()=>togExtra(idx,"a2"))}</div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9"}}>{chk(!!cv.h1,()=>togExtra(idx,"h1"))}</div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9"}}>{chk(!!cv.h2,()=>togExtra(idx,"h2"))}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #0001"}}>
+          <div style={{background:"#1e293b",display:"grid",gridTemplateColumns:"28px 26px minmax(0,1fr) 34px 52px 12px 52px",padding:"8px 10px",gap:4,alignItems:"center"}}>
+            {["#","Mod","Nombre","Cant","Ancho","","Alto"].map((h,i)=>(
+              <div key={"r"+i} style={{color:"#94a3b8",fontSize:10,fontWeight:700,textAlign:i>=3?"center":"left"}}>{h}</div>
+            ))}
+          </div>
+          {modules.map((m,mi)=>{
+            const ps=getPiezas(mi);
+            const mc=MOD_COLORS[mi%MOD_COLORS.length];
+            return ps.map((p,pi)=>{
+              lineNum++;
+              const cv=(cantoMap[mi]||{})[p.tipo]||{};
+              return(
+                <div key={(mi+"-"+pi)} style={{display:"grid",gridTemplateColumns:"28px 26px minmax(0,1fr) 34px 52px 12px 52px",padding:"9px 10px",gap:4,alignItems:"center",background:lineNum%2===0?"#f8fafc":"#fff",borderBottom:"1px solid #f1f5f9"}}>
+                  <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>{lineNum}.</div>
+                  <div><span style={{fontSize:10,fontWeight:800,padding:"2px 4px",borderRadius:4,background:mc.bg,color:mc.text,border:"1.5px solid "+(mc.border)}}>{mc.tag}</span></div>
+                  <div style={{display:"flex",alignItems:"center",gap:4,minWidth:0,overflow:"hidden"}}>
+                    <span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:(TIPO_COLOR[p.tipo]||{}).fill,border:"1.5px solid "+((TIPO_COLOR[p.tipo]||{}).stroke||"#ccc"),flexShrink:0}}/>
+                    <span style={{fontSize:12,fontWeight:600,color:"#1e293b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.nombre}</span>
+                  </div>
+                  <div style={{textAlign:"center",fontWeight:800,fontSize:13}}>{p.qty}</div>
+                  <div style={{textAlign:"center",fontFamily:"monospace",fontSize:13,...uSt(cv.a1,cv.a2)}}>{p.ancho}</div>
+                  <div style={{textAlign:"center",color:"#94a3b8",fontSize:11}}>×</div>
+                  <div style={{textAlign:"center",fontFamily:"monospace",fontSize:13,...uSt(cv.h1,cv.h2)}}>{p.alto}</div>
+                </div>
+              );
+            });
+          })}
+        </div>
+
+        {modules.length>1&&(
+          <div style={{background:"#fff",borderRadius:12,padding:10,boxShadow:"0 1px 4px #0001",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Módulos:</span>
+            {modules.map((m,mi)=>{
+              const mc=MOD_COLORS[mi%MOD_COLORS.length];
+              return <span key={mi} style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:6,background:mc.bg,color:mc.text,border:"1.5px solid "+(mc.border)}}>{mc.tag} {m.nombre}</span>;
+            })}
+          </div>
+        )}
+
+        {/* Extra pieces in cortador list */}
+        {(piezasExtra||[]).length>0&&(
+          <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px #0001"}}>
+            <div style={{background:"#be185d",padding:"7px 10px"}}>
+              <span style={{color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.06em"}}>✏️ Piezas manuales</span>
+            </div>
+            {(piezasExtra||[]).map((p,idx)=>{
+              const cv=cantoExtra[idx]||{};
+              return(
+                <div key={idx} style={{display:"grid",gridTemplateColumns:"28px 26px minmax(0,1fr) 34px 52px 12px 52px",padding:"9px 10px",gap:4,alignItems:"center",background:idx%2===0?"#fff":"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
+                  <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>+{idx+1}</div>
+                  <div><span style={{fontSize:10,fontWeight:800,padding:"2px 4px",borderRadius:4,background:"#fce7f3",color:"#be185d",border:"1.5px solid #f9a8d4"}}>EX</span></div>
+                  <div style={{fontSize:12,fontWeight:600,color:"#be185d",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                  <div style={{textAlign:"center",fontWeight:800,fontSize:13}}>{p.qty}</div>
+                  <div style={{textAlign:"center",fontFamily:"monospace",fontSize:13,...uSt(cv.a1,cv.a2)}}>{p.ancho}</div>
+                  <div style={{textAlign:"center",color:"#94a3b8",fontSize:11}}>×</div>
+                  <div style={{textAlign:"center",fontFamily:"monospace",fontSize:13,...uSt(cv.h1,cv.h2)}}>{p.alto}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{background:"#0f172a",borderRadius:12,padding:"13px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{color:"#94a3b8",fontSize:13,fontWeight:600}}>Total cubre canto</span>
+          <span style={{color:"#4ade80",fontWeight:800,fontSize:22}}>{totalML.toFixed(2)} ml</span>
+        </div>
+      </div>
+      <style>{`@media print{.no-print{display:none!important}body{background:white}}`}</style>
+    </div>
+  );
+}
+
+// ─── PLANOS PARA IMPRIMIR ─────────────────────────────────────────────────────
+function PlanoCanvas({ mod, thickness, modIdx }) {
+  const canvasRef = useRef(null);
+  const T = thickness;
+  useEffect(()=>{
+    const canvas = canvasRef.current; if(!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const A=parseInt(mod.ancho)||0, H=parseInt(mod.alto)||0, P=parseInt(mod.profundidad)||0;
+    if(!A||!H||!P){ ctx.clearRect(0,0,canvas.width,canvas.height); return; }
+    const W=canvas.width, CH=canvas.height;
+    ctx.clearRect(0,0,W,CH);
+    ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,CH);
+    const pad=44, scale=Math.min((W-pad*2)/A,(CH-pad*2)/H);
+    const ox=(W-A*scale)/2, oy=(CH-H*scale)/2;
+    const AW=A*scale, Ts=T*scale, lHpx=(H-T*2)*scale;
+    const anchoInterno=A-T*2, innerW=anchoInterno*scale, innerX=ox+Ts;
+    const nRef=parseInt(mod.refuerzos)||0, Rs=Math.max(2,60*scale);
+    const nCaj=parseInt(mod.cantCajones)||0, aCaj=parseInt(mod.altoCajon)||0;
+    const nRep=parseInt(mod.repisas)||0, nLM=parseInt(mod.lateralesMedios)||0;
+    const nPuertas=parseInt(mod.cantPuertas)||0;
+    const topEdge=nRef>=1?Rs:0, botEdge=nRef>=2?Rs:0;
+    const cajTH=nCaj>0&&aCaj>0?aCaj*scale*nCaj:0;
+    function dr(x,y,w,h,fill,stroke,lw=1.5){
+      if(w<=0||h<=0)return;
+      ctx.fillStyle=fill;ctx.strokeStyle=stroke;ctx.lineWidth=lw;
+      ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();
+    }
+    // Structure
+    dr(ox,oy,AW,Ts,"#C8DFF5","#2563EB");
+    dr(ox,oy+Ts+lHpx,AW,Ts,"#C8DFF5","#2563EB");
+    dr(ox,oy+Ts,Ts,lHpx,"#D1FAE5","#059669");
+    dr(ox+AW-Ts,oy+Ts,Ts,lHpx,"#D1FAE5","#059669");
+    if(nRef>=1)dr(innerX,oy+Ts,innerW,Rs,"#FCE7F3","#DB2777",1);
+    if(nRef>=2)dr(innerX,oy+Ts+lHpx-Rs,innerW,Rs,"#FCE7F3","#DB2777",1);
+    if(nCaj>0&&aCaj>0){
+      const cjH=aCaj*scale;
+      for(let i=0;i<nCaj;i++){const cy=oy+Ts+lHpx-botEdge-cjH*(i+1);if(cy<oy+Ts)break;dr(innerX+1,cy+1,innerW-2,cjH-2,"#E0E7FF","#4F46E5",1);}
+    }
+    if(nRep>0){
+      const zonaH=lHpx-topEdge-botEdge-cajTH, step=zonaH/(nRep+1);
+      const segMM=Math.round((H-T*2-(nCaj>0&&aCaj>0?aCaj*nCaj:0))/(nRep+1));
+      ctx.strokeStyle="#CA8A04";ctx.lineWidth=1.5;
+      for(let i=1;i<=nRep;i++){
+        const ey=oy+Ts+topEdge+step*i;
+        ctx.beginPath();ctx.moveTo(innerX,ey);ctx.lineTo(innerX+innerW,ey);ctx.stroke();
+        ctx.fillStyle="#92400e";ctx.font="8px 'Inter',sans-serif";ctx.textAlign="left";
+        ctx.fillText(`${segMM}mm`,innerX+2,ey-2);
+      }
+    }
+    if(nLM>0){
+      const stepLM=innerW/(nLM+1), segMM=Math.round(anchoInterno/(nLM+1));
+      ctx.fillStyle="#D97706cc";ctx.strokeStyle="#D97706";ctx.lineWidth=Ts;
+      for(let i=1;i<=nLM;i++){const lx=innerX+stepLM*i-Ts/2;ctx.beginPath();ctx.rect(lx,oy+Ts,Ts,lHpx);ctx.fill();ctx.stroke();}
+      ctx.lineWidth=1;ctx.fillStyle="#92400e";ctx.font="bold 8px 'Inter',sans-serif";ctx.textAlign="center";
+      for(let i=0;i<=nLM;i++)ctx.fillText(`${segMM}`,innerX+stepLM*(i+0.5),oy+Ts+lHpx/2);
+    }
+    if(nPuertas>0){
+      const pTop=oy+Ts+topEdge+2,pBot=oy+Ts+lHpx-botEdge-2;
+      ctx.strokeStyle="#0284C7";ctx.lineWidth=1.5;
+      ctx.strokeRect(innerX+2,pTop,innerW-4,pBot-pTop);
+      ctx.beginPath();ctx.moveTo(innerX+4,pTop+2);ctx.lineTo(innerX+innerW-4,pBot-2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(innerX+innerW-4,pTop+2);ctx.lineTo(innerX+4,pBot-2);ctx.stroke();
+      ctx.fillStyle="#0284C7";ctx.font="bold 9px 'Inter',sans-serif";ctx.textAlign="center";
+      ctx.fillText(`${nPuertas}x`,innerX+innerW/2,pTop+12);
+    }
+    // Cotas
+    ctx.fillStyle="#334155";ctx.strokeStyle="#475569";ctx.lineWidth=0.8;ctx.font="bold 10px 'Inter',sans-serif";
+    ctx.beginPath();ctx.moveTo(ox,oy-16);ctx.lineTo(ox+AW,oy-16);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ox,oy-20);ctx.lineTo(ox,oy-12);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ox+AW,oy-20);ctx.lineTo(ox+AW,oy-12);ctx.stroke();
+    ctx.textAlign="center";ctx.fillText(`${A} mm`,ox+AW/2,oy-22);
+    ctx.save();ctx.translate(ox+AW+20,oy+H*scale/2);ctx.rotate(Math.PI/2);ctx.fillText(`${H} mm`,0,0);ctx.restore();
+    ctx.beginPath();ctx.moveTo(ox+AW+12,oy);ctx.lineTo(ox+AW+12,oy+H*scale);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ox+AW+8,oy);ctx.lineTo(ox+AW+16,oy);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ox+AW+8,oy+H*scale);ctx.lineTo(ox+AW+16,oy+H*scale);ctx.stroke();
+    ctx.textAlign="center";ctx.fillStyle="#64748b";ctx.font="9px 'Inter',sans-serif";
+    ctx.fillText(`Prof: ${P} mm`,ox+AW/2,oy+H*scale+16);
+    ctx.fillStyle="#0369a1";ctx.font="8px 'Inter',sans-serif";
+    ctx.fillText(`AI: ${anchoInterno}mm`,innerX+innerW/2,oy+Ts+8);
+  },[mod,thickness,modIdx]);
+  return <canvas ref={canvasRef} width={260} height={320} style={{border:"1px solid #e2e8f0",borderRadius:4,background:"#fff",display:"block"}}/>;
+}
+
+function PlanosImprimir({ modules, thickness, onClose }) {
+  const readyMods = modules.filter(m=>parseInt(m.ancho)&&parseInt(m.alto)&&parseInt(m.profundidad));
+  return(
+    <div style={{position:"fixed",inset:0,background:"#f1f5f9",zIndex:150,overflowY:"auto",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+      <div style={{background:"#0f172a",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}} className="no-print">
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>📋</span>
+          <div>
+            <div style={{color:"#f8fafc",fontWeight:800,fontSize:15}}>Planos de módulos</div>
+            <div style={{color:"#94a3b8",fontSize:11}}>{readyMods.length} módulos</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>window.print()} style={{padding:"8px 16px",borderRadius:8,background:"#0369a1",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:700}}>↑ Compartir / PDF</button>
+          <button onClick={onClose} style={{padding:"8px 12px",borderRadius:8,background:"#334155",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:600}}>← Volver</button>
+        </div>
+      </div>
+      <div style={{maxWidth:900,margin:"0 auto",padding:"16px"}}>
+        {readyMods.map((mod,i)=>{
+          const mi=modules.indexOf(mod);
+          const mc=MOD_COLORS[mi%MOD_COLORS.length];
+          const piezas=calcModule(mod,thickness);
+          const nPuertas=parseInt(mod.cantPuertas)||0;
+          return(
+            <div key={"r"+i} style={{background:"#fff",borderRadius:8,marginBottom:20,overflow:"hidden",boxShadow:"0 1px 6px #0001",pageBreakAfter:"always"}} className="print-page">
+              <div style={{padding:"12px 16px",borderBottom:"3px solid "+(mc.border),display:"flex",alignItems:"center",gap:10,background:mc.bg+"44"}}>
+                <span style={{fontSize:12,fontWeight:800,padding:"3px 10px",borderRadius:6,background:mc.bg,color:mc.text,border:"1.5px solid "+(mc.border)}}>{mc.tag}</span>
+                <div>
+                  <div style={{fontWeight:800,fontSize:15,color:"#0f172a"}}>{mod.nombre}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{mod.ancho} × {mod.alto} × {mod.profundidad} mm · e{thickness}mm · AI: {parseInt(mod.ancho)-thickness*2}mm</div>
+                </div>
+              </div>
+              <div style={{padding:"16px",display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-start"}}>
+                <div style={{flex:"0 0 auto",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                  <PlanoCanvas mod={mod} thickness={thickness} modIdx={mi}/>
+                  <div style={{fontSize:9,color:"#94a3b8"}}>Vista frontal · escala proporcional</div>
+                </div>
+                <div style={{flex:1,minWidth:200}}>
+                  <div style={{fontWeight:700,fontSize:11,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Lista de piezas</div>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                    <thead>
+                      <tr style={{background:"#1e293b",color:"#fff"}}>
+                        <th style={{padding:"5px 8px",textAlign:"left",fontWeight:700,fontSize:10}}>Pieza</th>
+                        <th style={{padding:"5px 5px",textAlign:"center",fontWeight:700,fontSize:10}}>Cant</th>
+                        <th style={{padding:"5px 5px",textAlign:"right",fontWeight:700,fontSize:10}}>Ancho</th>
+                        <th style={{padding:"5px 5px",textAlign:"right",fontWeight:700,fontSize:10}}>Alto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {piezas.map((p,pi)=>{
+                        const col=TIPO_COLOR[p.tipo]||TIPO_COLOR.techo;
+                        return(
+                          <tr key={pi} style={{background:pi%2===0?"#f8fafc":"#fff",borderBottom:"1px solid #e2e8f0"}}>
+                            <td style={{padding:"4px 8px",display:"flex",alignItems:"center",gap:5}}>
+                              <span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:col.fill,border:"1.5px solid "+(col.stroke),flexShrink:0}}/>
+                              <span style={{fontSize:11}}>{p.nombre}</span>
+                            </td>
+                            <td style={{padding:"4px 5px",textAlign:"center",fontWeight:700}}>{p.qty}</td>
+                            <td style={{padding:"4px 5px",textAlign:"right",fontFamily:"monospace",fontWeight:600}}>{p.ancho}</td>
+                            <td style={{padding:"4px 5px",textAlign:"right",fontFamily:"monospace",fontWeight:600}}>{p.alto}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <div style={{marginTop:6,padding:"5px 8px",background:"#f1f5f9",borderRadius:5,display:"flex",justifyContent:"space-between",fontSize:11}}>
+                    <span style={{color:"#64748b"}}>Total:</span>
+                    <span style={{fontWeight:700}}>{piezas.reduce((s,p)=>s+p.qty,0)} piezas</span>
+                  </div>
+                  <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+                    {nPuertas>0&&<div style={{padding:"5px 8px",background:"#e0f2fe",borderRadius:5,fontSize:10,color:"#0c4a6e"}}>🚪 {nPuertas} puerta{nPuertas>1?"s":""}: {Math.round(parseInt(mod.ancho)/nPuertas)-3} × {parseInt(mod.alto)-5} mm c/u</div>}
+                    {(mod.frentesCajones||[]).filter(fc=>parseInt(fc.alto)>0).map((fc,fi)=>(
+                      <div key={fi} style={{padding:"5px 8px",background:"#fdf4ff",borderRadius:5,fontSize:10,color:"#581c87"}}>🗄 Frente cajón {fi+1}: {parseInt(mod.ancho)-4} × {fc.alto} mm × {fc.qty||1}</div>
+                    ))}
+                    {mod.zoclo&&<div style={{padding:"5px 8px",background:"#fef9c3",borderRadius:5,fontSize:10,color:"#713f12"}}>🦶 Lleva zóclo</div>}
+                    {parseInt(mod.lateralesMedios)>0&&<div style={{padding:"5px 8px",background:"#fff7ed",borderRadius:5,fontSize:10,color:"#7c2d12"}}>📏 {mod.lateralesMedios} lateral{parseInt(mod.lateralesMedios)>1?"es medios":" medio"} · {Math.round((parseInt(mod.ancho)-thickness*2)/(parseInt(mod.lateralesMedios)+1))}mm c/u</div>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <style>{`@media print{.no-print{display:none!important}body{background:white;margin:0}.print-page{box-shadow:none!important;border-radius:0!important;margin-bottom:0!important;page-break-after:always}}`}</style>
+    </div>
+  );
+}
+
+
+// ─── OPTIMIZADOR DE CORTE ─────────────────────────────────────────────────────
+// Algoritmo: Guillotine BestFit + rotación permitida
+// Kerf (corte sierra): 3mm
+
+function optimizarCorte(piezasInput, sheetW, sheetH, kerf, allowRotation) {
+  // Expandir piezas individuales
+  const piezas = [];
+  piezasInput.forEach(p => {
+    for (let i = 0; i < p.qty; i++) {
+      piezas.push({ nombre: p.nombre, w: p.ancho, h: p.alto, modNombre: p.modNombre, tipo: p.tipo });
+    }
+  });
+
+  // Ordenar: primero por altura desc, luego por ancho desc (mejor para guillotine)
+  // Flag pieces that exceed sheet in both orientations as unplaceable
+  const unplaceable = piezas.filter(p =>
+    (p.w > sheetW || p.h > sheetH) && (p.h > sheetW || p.w > sheetH)
+  );
+  const placeable = piezas.filter(p =>
+    !((p.w > sheetW || p.h > sheetH) && (p.h > sheetW || p.w > sheetH))
+  );
+  // Use only placeable; unplaceable will be ignored (shown as warning)
+  piezas.length = 0; placeable.forEach(p => piezas.push(p));
+
+  piezas.sort((a, b) => {
+    const hA = Math.max(a.w,a.h), hB = Math.max(b.w,b.h);
+    if (hB !== hA) return hB - hA;
+    return (b.w*b.h) - (a.w*a.h);
+  });
+
+  const hojas = [];
+
+  function newSheet() {
+    return { espacios: [{ x:0, y:0, w:sheetW, h:sheetH }], piezas: [], usedArea: 0 };
+  }
+
+  function tryPlace(sheet, pw, ph) {
+    const kw = pw >= sheetW ? 0 : kerf;
+    const kh = ph >= sheetH ? 0 : kerf;
+    // BestFit: espacio más ajustado (menor área residual)
+    let best = null, bestIdx = -1, bestWaste = Infinity;
+    sheet.espacios.forEach((sp, idx) => {
+      if (pw + kw <= sp.w && ph + kh <= sp.h) {
+        const waste = sp.w * sp.h - pw * ph;
+        if (waste < bestWaste) { bestWaste = waste; best = sp; bestIdx = idx; }
+      }
+    });
+    if (!best) return null;
+    const placed = { x: best.x, y: best.y, w: pw, h: ph };
+    const newSpaces = [];
+    const remW = best.w - pw - kw;
+    const remH = best.h - ph - kh;
+    // Guillotine: split along the longer remaining axis first
+    if (remW > remH) {
+      if (remW > 5) newSpaces.push({ x: best.x+pw+kw, y: best.y,     w: remW,    h: best.h });
+      if (remH > 5) newSpaces.push({ x: best.x,       y: best.y+ph+kh, w: pw+kw, h: remH });
+    } else {
+      if (remH > 5) newSpaces.push({ x: best.x,       y: best.y+ph+kh, w: best.w, h: remH });
+      if (remW > 5) newSpaces.push({ x: best.x+pw+kw, y: best.y,     w: remW,     h: ph+kh });
+    }
+    sheet.espacios.splice(bestIdx, 1, ...newSpaces);
+    // Merge overlapping/adjacent spaces (simplification: just re-sort by area desc)
+    sheet.espacios.sort((a,b) => b.w*b.h - a.w*a.h);
+    sheet.usedArea += pw * ph;
+    return placed;
+  }
+
+  piezas.forEach(pieza => {
+    let placed = false;
+    const canRotate = allowRotation && pieza.w !== pieza.h;
+    // Try all existing sheets, prefer the one with least waste
+    let bestSheet = null, bestPos = null, bestRotated = false, bestWaste = Infinity;
+    for (const sheet of hojas) {
+      // Deep copy espacios for dry-run
+      const drySheet = { ...sheet, espacios: sheet.espacios.map(s=>({...s})) };
+      const pos = tryPlace(drySheet, pieza.w, pieza.h);
+      if (pos) {
+        const waste = sheetW*sheetH - sheet.usedArea - pieza.w*pieza.h;
+        if (waste < bestWaste) { bestWaste=waste; bestSheet=sheet; bestPos=pos; bestRotated=false; }
+      }
+      if (canRotate) {
+        const drySheetR = { ...sheet, espacios: sheet.espacios.map(s=>({...s})) };
+        const posR = tryPlace(drySheetR, pieza.h, pieza.w);
+        if (posR) {
+          const waste = sheetW*sheetH - sheet.usedArea - pieza.w*pieza.h;
+          if (waste < bestWaste) { bestWaste=waste; bestSheet=sheet; bestPos=posR; bestRotated=true; }
+        }
+      }
+    }
+    if (bestSheet && bestPos) {
+      // Actually place it (re-run to mutate)
+      const pw = bestRotated ? pieza.h : pieza.w;
+      const ph = bestRotated ? pieza.w : pieza.h;
+      const pos = tryPlace(bestSheet, pw, ph);
+      if (pos) {
+        bestSheet.piezas.push({ ...pieza, w:pw, h:ph, ...pos, rotada:bestRotated });
+        placed = true;
+      }
+    }
+    if (!placed) {
+      const sheet = newSheet();
+      let pos = tryPlace(sheet, pieza.w, pieza.h);
+      if (pos) {
+        sheet.piezas.push({ ...pieza, ...pos });
+      } else if (canRotate) {
+        pos = tryPlace(sheet, pieza.h, pieza.w);
+        if (pos) sheet.piezas.push({ ...pieza, w:pieza.h, h:pieza.w, ...pos, rotada:true });
+      }
+      hojas.push(sheet);
+    }
+  });
+
+  return hojas.filter(h => h.piezas.length > 0);
+}
+
+const TIPO_COLORES_CORTE = {
+  techo:"#C8DFF5", piso:"#C8DFF5", lateral:"#D1FAE5", repisa:"#FEF9C3",
+  refuerzo:"#FCE7F3", cajon_frente:"#E0E7FF", cajon_lateral:"#F0FDF4",
+  lateral_medio:"#FEF3C7", puerta:"#E0F2FE", frente_cajon:"#FDF4FF",
+};
+
+function OptimizadorCorte({ modules, thickness, sheetSize, material, piezasExtraInit, onSavePiezasExtra, onClose }) {
+  const KERF = 3;
+  const sheetW = sheetSize.w;
+  const sheetH = sheetSize.h;
+  const [selectedSheet, setSelectedSheet] = useState(0);
+  const [piezasExtra, setPiezasExtra] = useState(piezasExtraInit||[]);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newNombre, setNewNombre] = useState("");
+  const [newAncho, setNewAncho] = useState("");
+  const [newAlto, setNewAlto] = useState("");
+  const [newQty, setNewQty] = useState("1");
+  const canvasRef = useRef(null);
+
+  // Recopilar todas las piezas de todos los módulos + extras
+  const todasPiezas = [];
+  modules.forEach(m => {
+    if (!parseInt(m.ancho)||!parseInt(m.alto)||!parseInt(m.profundidad)) return;
+    const ps = calcModule(m, thickness);
+    ps.forEach(p => todasPiezas.push({ ...p, modNombre: m.nombre }));
+  });
+  piezasExtra.forEach(p => todasPiezas.push({ ...p, modNombre: "Manual", tipo:"manual" }));
+
+  // Save back to App whenever piezasExtra changes
+  useEffect(()=>{ onSavePiezasExtra&&onSavePiezasExtra(piezasExtra); },[piezasExtra]);
+
+  function addPiezaExtra() {
+    const a = parseInt(newAncho), h = parseInt(newAlto), q = parseInt(newQty)||1;
+    if (!a || !h) return;
+    setPiezasExtra(prev => [...prev, {
+      nombre: newNombre || ("Pieza "+(prev.length+1)),
+      ancho: a, alto: h, qty: q, tipo: "manual"
+    }]);
+    setNewNombre(""); setNewAncho(""); setNewAlto(""); setNewQty("1");
+    setShowAddForm(false);
+  }
+
+  function removePiezaExtra(idx) {
+    setPiezasExtra(prev => prev.filter((_,i) => i !== idx));
+  }
+
+  const allowRotation = material !== "veteado";
+  const hojas = optimizarCorte(todasPiezas, sheetW, sheetH, KERF, allowRotation);
+
+  const totalArea = todasPiezas.reduce((s,p) => s + p.ancho * p.alto * p.qty, 0);
+  const sheetArea = sheetW * sheetH;
+  const aprovechamiento = hojas.length > 0 ? ((totalArea / (sheetArea * hojas.length)) * 100).toFixed(1) : 0;
+
+  // Draw selected sheet
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0,0,W,H);
+    const PAD = 8;
+    const sc = Math.min((W - PAD*2) / sheetW, (H - PAD*2) / sheetH);
+    const ox = (W - sheetW*sc)/2, oy = (H - sheetH*sc)/2;
+
+    // Sheet background
+    ctx.fillStyle = "#f8fafc";
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(ox, oy, sheetW*sc, sheetH*sc);
+    ctx.strokeRect(ox, oy, sheetW*sc, sheetH*sc);
+
+    // Draw pieces
+    const sheet = hojas[selectedSheet];
+    if (!sheet) return;
+    sheet.piezas.forEach((p, i) => {
+      const col = TIPO_COLORES_CORTE[p.tipo] || "#e2e8f0";
+      const px = ox + p.x*sc, py = oy + p.y*sc;
+      const pw = p.w*sc, ph = p.h*sc;
+      ctx.fillStyle = col;
+      ctx.strokeStyle = "#64748b";
+      ctx.lineWidth = 0.8;
+      ctx.fillRect(px, py, pw, ph);
+      ctx.strokeRect(px, py, pw, ph);
+      // Label
+      const fs = Math.max(6, Math.min(9, Math.min(pw, ph) / 4));
+      ctx.fillStyle = "#1e293b";
+      ctx.font = `${fs}px 'Inter',sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const label = p.rotada ? `↻${p.w}×${p.h}` : `${p.w}×${p.h}`;
+      if (pw > 24 && ph > 12) {
+        ctx.fillText(p.nombre.substring(0,8), px+pw/2, py+ph/2 - fs*0.6);
+        ctx.fillText(label, px+pw/2, py+ph/2 + fs*0.6);
+      }
+    });
+  }, [selectedSheet, hojas, sheetW, sheetH]);
+
+  function generarPDF() {
+    const today = new Date().toLocaleDateString("es-MX");
+    const sheetAreaM2 = (sheetW * sheetH / 1e6).toFixed(3);
+    const totalSheetAreaM2 = (sheetW * sheetH * hojas.length / 1e6).toFixed(3);
+    const piezasAreaM2 = (todasPiezas.reduce((s,p)=>s+p.ancho*p.alto*p.qty,0)/1e6).toFixed(3);
+    const wasteM2 = (parseFloat(totalSheetAreaM2) - parseFloat(piezasAreaM2)).toFixed(3);
+    const totalCutM = hojas.reduce((sum,sheet)=>{
+      // Approximate: sum of all cut lines
+      let cuts=0;
+      sheet.piezas.forEach(p=>{ cuts += p.w + p.h; });
+      return sum + cuts;
+    },0)/1000;
+
+    // Build piece list (deduplicated by name+dims)
+    const pieceRows = [];
+    let lineN = 1;
+    const seen = {};
+    todasPiezas.forEach(p => {
+      const key = `${p.nombre}|${p.ancho}|${p.alto}`;
+      if (seen[key]) { seen[key].qty += p.qty; return; }
+      seen[key] = { ...p, lineN: lineN++ };
+      pieceRows.push(seen[key]);
+    });
+
+    // Canvas per sheet
+    function sheetCanvas(sheet, sw, sh) {
+      const W=500, H=Math.round(W * sh/sw);
+      const sc = W/sw;
+      let paths = '';
+      sheet.piezas.forEach((p,i) => {
+        const colors=["#dbeafe","#dcfce7","#fef9c3","#fce7f3","#e0e7ff","#f0fdf4","#fff7ed","#fdf4ff","#e0f2fe","#f1f5f9"];
+        const col=colors[i%colors.length];
+        const px=Math.round(p.x*sc), py=Math.round(p.y*sc), pw=Math.round(p.w*sc), ph=Math.round(p.h*sc);
+        const lbl = p.rotada ? p.w+"×"+p.h+"↻" : p.w+"×"+p.h;
+        const fs = Math.max(7, Math.min(10, Math.min(pw,ph)/3.5));
+        // Find piece number from pieceRows
+        const pieceNum = pieceRows.findIndex(r => r.nombre===p.nombre && r.ancho===p.ancho && r.alto===p.alto);
+        const numLabel = pieceNum >= 0 ? (pieceNum+1)+"." : "";
+        paths += "<rect x=\""+px+"\" y=\""+py+"\" width=\""+pw+"\" height=\""+ph+"\" fill=\""+col+"\" stroke=\"#64748b\" stroke-width=\"0.8\"/>";
+        if(pw>20&&ph>12){
+          paths += "<text x=\""+(px+4)+"\" y=\""+(py+fs+2)+"\" font-size=\""+(fs*0.9)+"\" fill=\"#1d4ed8\" font-family=\"Arial\" font-weight=\"bold\">"+numLabel+"</text>";
+          paths += "<text x=\""+(px+pw/2)+"\" y=\""+(py+ph/2-fs*0.4)+"\" text-anchor=\"middle\" font-size=\""+fs+"\" fill=\"#1e293b\" font-family=\"Arial\">"+p.nombre.substring(0,10)+"</text>";
+          paths += "<text x=\""+(px+pw/2)+"\" y=\""+(py+ph/2+fs*0.8)+"\" text-anchor=\"middle\" font-size=\""+(fs*0.85)+"\" fill=\"#475569\" font-family=\"Arial\">"+lbl+"</text>";
+        }
+      });
+      return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="border:1.5px solid #334155;display:block;">
+        <rect width="${W}" height="${H}" fill="#f8fafc"/>
+        ${paths}
+      </svg>`;
+    }
+
+    // Mini piece table for sheet
+    function miniTable(sheet) {
+      const grouped = {};
+      sheet.piezas.forEach(p=>{
+        const k=`${p.nombre}|${p.w}×${p.h}`;
+        if(!grouped[k])grouped[k]={...p,cnt:0};
+        grouped[k].cnt++;
+      });
+      const rows = Object.values(grouped).map((p,i)=>
+        `<tr style="background:${i%2===0?"#f8fafc":"#fff"}">
+          <td style="padding:3px 6px;border:1px solid #e2e8f0">${p.nombre}</td>
+          <td style="padding:3px 6px;border:1px solid #e2e8f0;text-align:center">${p.cnt}</td>
+          <td style="padding:3px 6px;border:1px solid #e2e8f0;text-align:right">${p.w}</td>
+          <td style="padding:3px 6px;border:1px solid #e2e8f0;text-align:right">${p.h}</td>
+        </tr>`
+      ).join("");
+      return `<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:8px">
+        <tr style="background:#1e293b;color:#fff">
+          <th style="padding:4px 6px;text-align:left">Pieza</th>
+          <th style="padding:4px 6px">Cant</th>
+          <th style="padding:4px 6px">Largo</th>
+          <th style="padding:4px 6px">Ancho</th>
+        </tr>${rows}</table>`;
+    }
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Plan de Corte</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff}
+      .page{width:210mm;min-height:297mm;padding:14mm 14mm 14mm 14mm;page-break-after:always;position:relative}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:10px}
+      .header-left{display:flex;flex-direction:column;gap:3px}
+      .header-meta{display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;font-size:10px}
+      .logo{font-weight:900;font-size:13px;color:#334155}
+      table{border-collapse:collapse;width:100%}
+      th,td{border:1px solid #ccc;padding:3px 6px}
+      th{background:#e5e7eb;font-weight:700}
+      .underline{text-decoration:underline}
+      .dbl{text-decoration:underline double}
+      .checkbox{display:inline-block;width:12px;height:12px;border:1.5px solid #000}
+      h2{font-size:12px;font-weight:700;text-align:center;margin:8px 0 6px}
+      .results-table td:first-child{font-weight:600;background:#f3f4f6}
+      .sheet-title{font-size:10px;color:#64748b;text-align:right;margin-top:4px}
+      @media print{
+        body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        .page{page-break-after:always}
+      }
+    </style>
+    </head><body>
+
+    <!-- PÁGINA 1: RESULTADOS -->
+    <div class="page">
+      <div class="header">
+        <div class="header-left">
+          <div><b>Orden:</b> _______________</div>
+          <div><b>Material:</b> _______________</div>
+        </div>
+        <div style="text-align:center">
+          <div><b>Fecha:</b> ${today}</div>
+          <div><b>Fecha para entrega:</b> _______________</div>
+        </div>
+        <div>
+          <div><b>Espesor:</b> ${thickness}mm</div>
+          <div class="logo">🪵 Despiezador</div>
+        </div>
+      </div>
+
+      <h2>Resultados</h2>
+      <table class="results-table" style="margin-bottom:16px">
+        <tr><td>Tamaño del tablero</td><td>${sheetW} × ${sheetH} mm</td><td>Cantidad de piezas:</td><td>${todasPiezas.reduce((s,p)=>s+p.qty,0)}</td></tr>
+        <tr><td>Cantidad de tableros:</td><td>${hojas.length}</td><td>Superficie de las piezas:</td><td>${piezasAreaM2} m²</td></tr>
+        <tr><td>Superficie del tablero:</td><td>${sheetAreaM2} m²</td><td>Superficie de desperdicio:</td><td>${wasteM2} m²</td></tr>
+        <tr><td>Superficie tableros:</td><td>${totalSheetAreaM2} m²</td><td>Aprovechamiento:</td><td>${aprovechamiento}%</td></tr>
+        <tr><td>Distancia total cortada:</td><td>${totalCutM.toFixed(2)} m</td><td>Kerf:</td><td>${KERF} mm</td></tr>
+      </table>
+
+      <h2>Bordes (Cubre canto)</h2>
+      <table style="width:auto;margin-bottom:16px">
+        <tr><th>#</th><th>Tipo</th><th>Indicador</th></tr>
+        <tr><td style="text-align:center">1</td><td>Un lado</td><td><span class="underline">___</span></td></tr>
+        <tr><td style="text-align:center">2</td><td>Dos lados</td><td><span class="dbl">===</span></td></tr>
+      </table>
+    </div>
+
+    <!-- PÁGINA 2: LISTA DE PARTES -->
+    <div class="page">
+      <div class="header">
+        <div><b>Orden:</b> _______________&nbsp;&nbsp;<b>Fecha:</b> ${today}&nbsp;&nbsp;<b>Fecha entrega:</b> _______________</div>
+        <div><b>Material:</b> _______________&nbsp;&nbsp;<b>Espesor:</b> ${thickness}mm</div>
+      </div>
+      <h2>Partes</h2>
+      <table>
+        <thead>
+          <tr style="background:#d1d5db">
+            <th style="width:30px">#</th>
+            <th>Largo</th>
+            <th>Ancho</th>
+            <th>Cantidad</th>
+            <th>Rotación</th>
+            <th>Nombre</th>
+            <th style="width:28px">PA</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pieceRows.map(p => {
+            // Canto logic from allPiezas
+            const cv = {};
+            // Find canto for this piece tipo across all modules
+            const cantoForTipo = (tipo) => { return {a1:false,a2:false,h1:false,h2:false}; };
+            const ladosA = (p.tipo==="puerta"||p.tipo==="frente_cajon") ? 2 : 0;
+            const ladosH = (p.tipo==="puerta"||p.tipo==="frente_cajon") ? 2 :
+                           (["lateral","repisa","cajon_frente","cajon_lateral","lateral_medio"].includes(p.tipo)?1:0);
+            const anchoStyle = ladosA>=2 ? 'class="dbl"' : ladosA===1 ? 'class="underline"' : '';
+            const altoStyle  = ladosH>=2 ? 'class="dbl"' : ladosH===1 ? 'class="underline"' : '';
+            return `<tr style="border-bottom:1px solid #e5e7eb">
+              <td style="text-align:center">${p.lineN}.</td>
+              <td style="text-align:center"><span ${altoStyle}>${p.alto}</span></td>
+              <td style="text-align:center"><span ${anchoStyle}>${p.ancho}</span></td>
+              <td style="text-align:center">${p.qty}</td>
+              <td style="text-align:center">No</td>
+              <td>${p.modNombre} – ${p.nombre}</td>
+              <td style="text-align:center"><span class="checkbox"></span></td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- PÁGINAS DE TABLEROS -->
+    ${hojas.map((sheet, si) => {
+      const usedPct = ((sheet.usedArea/sheetArea)*100).toFixed(1);
+      return `<div class="page">
+        <div class="header">
+          <div><b>Orden:</b> _______________&nbsp;&nbsp;<b>Fecha:</b> ${today}</div>
+          <div><b>Material:</b> _______________&nbsp;&nbsp;<b>Espesor:</b> ${thickness}mm</div>
+        </div>
+        <div style="display:flex;gap:16px;align-items:flex-start">
+          <div style="flex:1">
+            ${sheetCanvas(sheet, sheetW, sheetH)}
+            <div class="sheet-title">${sheetW} × ${sheetH} – ${si+1} (${usedPct}% usado)</div>
+          </div>
+          <div style="width:200px">
+            <b style="font-size:10px">Piezas en el tablero</b>
+            ${miniTable(sheet)}
+          </div>
+        </div>
+      </div>`;
+    }).join("")}
+
+    </body></html>`;
+
+    const blob = new Blob([html], {type:"text/html"});
+    const url  = URL.createObjectURL(blob);
+    const win  = window.open(url,"_blank");
+    if(!win) { alert("Habilitá las ventanas emergentes para generar el PDF"); }
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#f1f5f9",zIndex:150,overflowY:"auto",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+      {/* Header */}
+      <div style={{background:"#0f172a",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>✂️</span>
+          <div>
+            <div style={{color:"#f8fafc",fontWeight:800,fontSize:15}}>Optimizador de corte</div>
+            <div style={{color:"#94a3b8",fontSize:11}}>Hoja {sheetW}×{sheetH} · Kerf 3mm · {todasPiezas.reduce((s,p)=>s+p.qty,0)} piezas · {material==="veteado"?"🪵 Veteado (sin rotación)":"🎨 Liso (rotación libre)"}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={generarPDF} style={{padding:"7px 16px",borderRadius:7,background:"#0369a1",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:700}}>↑ Exportar PDF</button>
+          <button onClick={onClose} style={{padding:"7px 12px",borderRadius:7,background:"#334155",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:600}}>← Volver</button>
+        </div>
+      </div>
+
+      <div style={{maxWidth:860,margin:"0 auto",padding:"16px",display:"flex",flexDirection:"column",gap:14}}>
+
+        {/* Resumen */}
+        <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px #0001",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+          <div style={{textAlign:"center",padding:"10px",background:"#eff6ff",borderRadius:8}}>
+            <div style={{fontSize:28,fontWeight:800,color:"#2563eb"}}>{hojas.length}</div>
+            <div style={{fontSize:11,color:"#3b82f6",fontWeight:600}}>Hojas necesarias</div>
+            <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{sheetW}×{sheetH}mm</div>
+          </div>
+          <div style={{textAlign:"center",padding:"10px",background:"#f0fdf4",borderRadius:8}}>
+            <div style={{fontSize:28,fontWeight:800,color:"#16a34a"}}>{aprovechamiento}%</div>
+            <div style={{fontSize:11,color:"#16a34a",fontWeight:600}}>Aprovechamiento</div>
+            <div style={{fontSize:10,color:"#64748b",marginTop:2}}>promedio</div>
+          </div>
+          <div style={{textAlign:"center",padding:"10px",background:"#fff7ed",borderRadius:8}}>
+            <div style={{fontSize:28,fontWeight:800,color:"#ea580c"}}>{todasPiezas.reduce((s,p)=>s+p.qty,0)}</div>
+            <div style={{fontSize:11,color:"#ea580c",fontWeight:600}}>Total piezas</div>
+            <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{modules.filter(m=>parseInt(m.ancho)).length} módulos</div>
+          </div>
+        </div>
+
+        {/* Piezas extra manuales */}
+        <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px #0001"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:700,fontSize:12,color:"#0f172a",textTransform:"uppercase",letterSpacing:"0.06em"}}>✏️ Piezas manuales</div>
+            <button onClick={()=>setShowAddForm(f=>!f)}
+              style={{padding:"5px 12px",borderRadius:7,background:"#0f172a",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:700}}>
+              + Agregar
+            </button>
+          </div>
+          {showAddForm&&(
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end",padding:"12px",background:"#f8fafc",borderRadius:8,marginBottom:10,border:"1px solid #e2e8f0"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:3,flex:2,minWidth:100}}>
+                <label style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase"}}>Nombre</label>
+                <input value={newNombre} onChange={e=>setNewNombre(e.target.value)} placeholder="Ej: Repisa extra"
+                  style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:3,flex:1,minWidth:70}}>
+                <label style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase"}}>Ancho mm</label>
+                <input type="number" inputMode="numeric" value={newAncho} onChange={e=>setNewAncho(e.target.value)}
+                  style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:3,flex:1,minWidth:70}}>
+                <label style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase"}}>Alto mm</label>
+                <input type="number" inputMode="numeric" value={newAlto} onChange={e=>setNewAlto(e.target.value)}
+                  style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:3,width:60}}>
+                <label style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase"}}>Cant.</label>
+                <input type="number" inputMode="numeric" value={newQty} onChange={e=>setNewQty(e.target.value)}
+                  style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={addPiezaExtra}
+                  style={{padding:"6px 14px",borderRadius:6,background:"#16a34a",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:700}}>
+                  ✓
+                </button>
+                <button onClick={()=>setShowAddForm(false)}
+                  style={{padding:"6px 10px",borderRadius:6,background:"#f1f5f9",color:"#64748b",border:"none",cursor:"pointer",fontSize:13}}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+          {piezasExtra.length===0&&!showAddForm&&(
+            <div style={{color:"#94a3b8",fontSize:12,textAlign:"center",padding:"8px 0"}}>Sin piezas manuales — usá + Agregar para añadir cortes extra</div>
+          )}
+          {piezasExtra.map((p,i)=>(
+            <div key={"r"+i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:"#fff1f2",borderRadius:7,border:"1px solid #fecdd3",marginBottom:6}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#be185d",flex:1}}>{p.nombre}</span>
+              <span style={{fontSize:11,fontFamily:"monospace",color:"#475569"}}>{p.ancho}×{p.alto}mm</span>
+              <span style={{fontSize:11,fontWeight:700,color:"#64748b"}}>×{p.qty}</span>
+              <button onClick={()=>removePiezaExtra(i)}
+                style={{padding:"2px 8px",background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:5,cursor:"pointer",fontSize:12,fontWeight:700}}>×</button>
+            </div>
+          ))}
+        </div>
+
+        {/* Lista de hojas */}
+        <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px #0001"}}>
+          <div style={{fontWeight:700,fontSize:12,color:"#0f172a",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+            📋 Distribución por hoja
+          </div>
+          {hojas.map((sheet, si) => {
+            const usedPct = ((sheet.usedArea / sheetArea) * 100).toFixed(1);
+            const isSelected = selectedSheet === si;
+            return (
+              <div key={si} onClick={()=>setSelectedSheet(si)}
+                style={{marginBottom:8,padding:"12px 14px",borderRadius:9,border:"1.5px solid "+(isSelected?"#2563eb":"#e2e8f0"),background:isSelected?"#eff6ff":"#f8fafc",cursor:"pointer"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <span style={{fontWeight:700,fontSize:13,color:isSelected?"#2563eb":"#1e293b"}}>
+                    Hoja {si+1}
+                  </span>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:11,color:"#64748b"}}>{sheet.piezas.length} piezas</span>
+                    {/* Progress bar */}
+                    <div style={{width:80,height:8,background:"#e2e8f0",borderRadius:4,overflow:"hidden"}}>
+                      <div style={{width:usedPct+"%",height:"100%",background:parseFloat(usedPct)>75?"#16a34a":parseFloat(usedPct)>50?"#f59e0b":"#ef4444",borderRadius:4}}/>
+                    </div>
+                    <span style={{fontSize:11,fontWeight:700,color:parseFloat(usedPct)>75?"#16a34a":parseFloat(usedPct)>50?"#f59e0b":"#ef4444",minWidth:36}}>{usedPct}%</span>
+                  </div>
+                </div>
+                {/* Piezas agrupadas */}
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {Object.entries(
+                    sheet.piezas.reduce((acc,p)=>{
+                      const k=`${p.nombre}|${p.w}×${p.h}`;
+                      if(!acc[k])acc[k]={...p,cnt:0};
+                      acc[k].cnt++;
+                      return acc;
+                    },{})
+                  ).map(([k,p])=>{
+                    const col=TIPO_COLORES_CORTE[p.tipo]||"#e2e8f0";
+                    return(
+                      <span key={"kk"+k} style={{fontSize:10,padding:"2px 7px",borderRadius:12,background:col,color:"#1e293b",fontWeight:600,border:"1px solid #e2e8f0"}}>
+                        {p.cnt>1?(p.cnt+"× "):""}{p.nombre} {p.w}×{p.h}{p.rotada?" ↻":""}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Canvas visual de hoja seleccionada */}
+        <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px #0001"}}>
+          <div style={{fontWeight:700,fontSize:12,color:"#0f172a",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+            🗺️ Vista — Hoja {selectedSheet+1}
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+            {hojas.map((_,si)=>(
+              <button key={si} onClick={()=>setSelectedSheet(si)}
+                style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:selectedSheet===si?700:400,
+                  background:selectedSheet===si?"#2563eb":"#f1f5f9",color:selectedSheet===si?"#fff":"#334155",
+                  border:"1px solid "+(selectedSheet===si?"#2563eb":"#e2e8f0"),cursor:"pointer"}}>
+                Hoja {si+1}
+              </button>
+            ))}
+          </div>
+          <canvas ref={canvasRef} width={700} height={400}
+            style={{width:"100%",height:"auto",border:"1px solid #e2e8f0",borderRadius:6,background:"#f8fafc"}}/>
+          <div style={{marginTop:6,fontSize:10,color:"#94a3b8",textAlign:"center"}}>
+            ↻ = pieza rotada · Kerf 3mm incluido
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+
+// ─── ASISTENTE IA ─────────────────────────────────────────────────────────────
+function AsistenteIA({ modules, thickness, sheet, piezasExtra, onAddModules, onClose }) {
+  const [modo, setModo] = useState(null); // 'diseno' | 'optimizar' | 'costos'
+  const [input, setInput] = useState('');
+  const [precioPorHoja, setPrecioPorHoja] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [respuesta, setRespuesta] = useState(null);
+  const [error, setError] = useState(null);
+
+  async function callIA(prompt, systemMsg) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          system: systemMsg,
+          messages: [{role:'user', content: prompt}]
+        })
+      });
+      const data = await res.json();
+      const text = data.content && data.content[0] ? data.content[0].text : '';
+      setRespuesta(text);
+    } catch(e) {
+      setError('Error al conectar con la IA. Verificá tu conexión.');
+    }
+    setLoading(false);
+  }
+
+  function handleDiseno() {
+    if (!input.trim()) return;
+    callIA(
+      'Descripción del mueble: ' + input + '
+Espesor del material: ' + thickness + 'mm',
+      'Sos un experto en carpintería modular. El usuario describe un mueble y vos tenés que devolver SOLO un JSON válido con esta estructura exacta (sin texto adicional, sin markdown):
+[{"nombre":"Nombre módulo","ancho":"600","alto":"2440","profundidad":"600","repisas":"3","refuerzos":"2","lateralesMedios":"","cantCajones":"","altoCajon":"","zoclo":false,"cantPuertas":"","frentesCajones":[]}]
+Devolvé solo el array JSON, nada más.'
+    );
+  }
+
+  function handleOptimizar() {
+    const todasPiezas = [];
+    modules.forEach(m => {
+      if (!parseInt(m.ancho)||!parseInt(m.alto)||!parseInt(m.profundidad)) return;
+      const ps = calcModule(m, thickness);
+      ps.forEach(p => todasPiezas.push(p.nombre + ' ' + p.ancho + 'x' + p.alto + ' x' + p.qty));
+    });
+    piezasExtra.forEach(p => todasPiezas.push(p.nombre + ' ' + p.ancho + 'x' + p.alto + ' x' + p.qty));
+    const prompt = 'Hoja: ' + sheet.w + 'x' + sheet.h + 'mm, kerf 3mm
+Piezas:
+' + todasPiezas.join('
+');
+    callIA(prompt,
+      'Sos un experto en optimización de corte de tableros para carpintería. Analizá las piezas y la hoja dada y sugiere en español cómo mejorar el aprovechamiento del material. Sé concreto y breve: indica cuántas hojas necesitarías, qué piezas conviene rotar si el material es liso, y qué piezas podrían compartir corte. Máximo 200 palabras.'
+    );
+  }
+
+  function handleCostos() {
+    const precio = parseFloat(precioPorHoja);
+    if (!precio) return;
+    const todasPiezas = [];
+    modules.forEach(m => {
+      if (!parseInt(m.ancho)||!parseInt(m.alto)||!parseInt(m.profundidad)) return;
+      const ps = calcModule(m, thickness);
+      ps.forEach(p => todasPiezas.push({...p, modNombre: m.nombre}));
+    });
+    piezasExtra.forEach(p => todasPiezas.push({...p, modNombre:'Manual'}));
+    const hojas = optimizarCorte(todasPiezas, sheet.w, sheet.h, 3, true);
+    const numHojas = hojas.length;
+    const costoMaterial = numHojas * precio;
+    const areaTotal = todasPiezas.reduce((s,p) => s + p.ancho*p.alto*p.qty, 0) / 1e6;
+    const prompt = 'Proyecto de carpintería:
+- Módulos: ' + modules.filter(m=>parseInt(m.ancho)).length + '
+- Total piezas: ' + todasPiezas.reduce((s,p)=>s+p.qty,0) + '
+- Hojas necesarias: ' + numHojas + '
+- Precio por hoja: $' + precio + '
+- Costo de material: $' + costoMaterial.toFixed(2) + '
+- Superficie total piezas: ' + areaTotal.toFixed(2) + ' m²
+- Espesor: ' + thickness + 'mm';
+    callIA(prompt,
+      'Sos un experto en costos de carpintería. El usuario te da los datos de un proyecto. Calculá y presenta en español: costo de material, estimación de mano de obra (asumiendo $' + precio + ' por hoja como referencia), costo total estimado y precio de venta sugerido con 40% de ganancia. Sé claro y usa formato de tabla simple. Máximo 200 palabras.'
+    );
+  }
+
+  function tryParseModules(text) {
+    try {
+      const clean = text.replace(/```json|```/g,'').trim();
+      const arr = JSON.parse(clean);
+      if (Array.isArray(arr)) return arr;
+    } catch(e) {}
+    return null;
+  }
+
+  const parsedModules = respuesta && modo==='diseno' ? tryParseModules(respuesta) : null;
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'#f1f5f9',zIndex:200,display:'flex',flexDirection:'column',fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+      {/* Header */}
+      <div style={{background:'#0f172a',padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:22}}>🤖</span>
+          <div>
+            <div style={{color:'#f8fafc',fontWeight:800,fontSize:15}}>Asistente IA</div>
+            <div style={{color:'#94a3b8',fontSize:11}}>Powered by Claude</div>
+          </div>
+        </div>
+        <button onClick={onClose} style={{padding:'6px 12px',borderRadius:7,background:'#334155',color:'#fff',border:'none',cursor:'pointer',fontSize:12,fontWeight:600}}>← Volver</button>
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',padding:16,display:'flex',flexDirection:'column',gap:12}}>
+
+        {/* Modo selector */}
+        {!modo&&(
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            <div style={{fontSize:13,color:'#475569',fontWeight:600,textAlign:'center',marginBottom:4}}>¿Qué necesitás?</div>
+            {[
+              {id:'diseno', icon:'🪵', title:'Diseño automático', desc:'Describís el mueble y la IA genera los módulos'},
+              {id:'optimizar', icon:'✂️', title:'Optimizar corte', desc:'Sugerencias para aprovechar mejor el material'},
+              {id:'costos', icon:'💰', title:'Calcular costos', desc:'Estimación de material, mano de obra y precio de venta'},
+            ].map(opt=>(
+              <button key={opt.id} onClick={()=>{setModo(opt.id);setRespuesta(null);setError(null);}}
+                style={{padding:'14px 16px',borderRadius:12,background:'#fff',border:'1.5px solid #e2e8f0',cursor:'pointer',display:'flex',alignItems:'center',gap:12,textAlign:'left',boxShadow:'0 1px 3px #0001'}}>
+                <span style={{fontSize:28,flexShrink:0}}>{opt.icon}</span>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14,color:'#0f172a'}}>{opt.title}</div>
+                  <div style={{fontSize:12,color:'#64748b',marginTop:2}}>{opt.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Diseño */}
+        {modo==='diseno'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            <button onClick={()=>{setModo(null);setRespuesta(null);}} style={{alignSelf:'flex-start',padding:'4px 10px',borderRadius:6,background:'#f1f5f9',color:'#64748b',border:'1px solid #e2e8f0',cursor:'pointer',fontSize:12}}>← Volver</button>
+            <div style={{background:'#fff',borderRadius:12,padding:16,boxShadow:'0 1px 3px #0001'}}>
+              <div style={{fontWeight:700,fontSize:13,color:'#0f172a',marginBottom:8}}>🪵 Describí el mueble</div>
+              <textarea value={input} onChange={e=>setInput(e.target.value)}
+                placeholder="Ej: Closet de 2.4m de alto con 3 cajones abajo, 2 entrepaños en el medio y espacio para colgar ropa arriba. Profundidad 60cm."
+                style={{width:'100%',minHeight:100,padding:'10px 12px',borderRadius:8,border:'1.5px solid #cbd5e1',fontSize:13,resize:'vertical',fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
+              <button onClick={handleDiseno} disabled={loading||!input.trim()}
+                style={{marginTop:10,width:'100%',padding:'11px',borderRadius:8,background:loading||!input.trim()?'#94a3b8':'#6366f1',color:'#fff',border:'none',cursor:loading||!input.trim()?'default':'pointer',fontSize:13,fontWeight:700}}>
+                {loading?'Generando módulos...':'✨ Generar módulos'}
+              </button>
+            </div>
+            {error&&<div style={{background:'#fee2e2',color:'#dc2626',padding:12,borderRadius:8,fontSize:13}}>{error}</div>}
+            {respuesta&&(
+              <div style={{background:'#fff',borderRadius:12,padding:16,boxShadow:'0 1px 3px #0001'}}>
+                <div style={{fontWeight:700,fontSize:13,color:'#0f172a',marginBottom:8}}>Resultado</div>
+                {parsedModules?(
+                  <div>
+                    {parsedModules.map((m,i)=>(
+                      <div key={"r"+i} style={{padding:'10px 12px',background:'#f8fafc',borderRadius:8,marginBottom:8,border:'1px solid #e2e8f0'}}>
+                        <div style={{fontWeight:700,color:'#0f172a'}}>{m.nombre}</div>
+                        <div style={{fontSize:12,color:'#64748b',marginTop:2}}>{m.ancho}×{m.alto}×{m.profundidad}mm · {m.repisas||0} entrepaños · {m.refuerzos||0} refuerzos</div>
+                      </div>
+                    ))}
+                    <button onClick={()=>onAddModules(parsedModules.map(m=>({...emptyMod(m.nombre),...m})))}
+                      style={{width:'100%',padding:11,borderRadius:8,background:'#16a34a',color:'#fff',border:'none',cursor:'pointer',fontSize:13,fontWeight:700,marginTop:4}}>
+                      ✓ Agregar {parsedModules.length} módulo{parsedModules.length>1?'s':''} al proyecto
+                    </button>
+                  </div>
+                ):(
+                  <div style={{fontSize:13,color:'#334155',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{respuesta}</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Optimizar */}
+        {modo==='optimizar'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            <button onClick={()=>{setModo(null);setRespuesta(null);}} style={{alignSelf:'flex-start',padding:'4px 10px',borderRadius:6,background:'#f1f5f9',color:'#64748b',border:'1px solid #e2e8f0',cursor:'pointer',fontSize:12}}>← Volver</button>
+            <div style={{background:'#fff',borderRadius:12,padding:16,boxShadow:'0 1px 3px #0001'}}>
+              <div style={{fontWeight:700,fontSize:13,color:'#0f172a',marginBottom:4}}>✂️ Análisis de corte</div>
+              <div style={{fontSize:12,color:'#64748b',marginBottom:12}}>Se analizarán {modules.filter(m=>parseInt(m.ancho)).length} módulos con {modules.reduce((s,m)=>{try{return s+calcModule(m,thickness).reduce((a,p)=>a+p.qty,0);}catch(e){return s;}},0)} piezas en hojas {sheet.w}×{sheet.h}mm</div>
+              <button onClick={handleOptimizar} disabled={loading}
+                style={{width:'100%',padding:11,borderRadius:8,background:loading?'#94a3b8':'#6366f1',color:'#fff',border:'none',cursor:loading?'default':'pointer',fontSize:13,fontWeight:700}}>
+                {loading?'Analizando...':'✨ Analizar y optimizar'}
+              </button>
+            </div>
+            {error&&<div style={{background:'#fee2e2',color:'#dc2626',padding:12,borderRadius:8,fontSize:13}}>{error}</div>}
+            {respuesta&&(
+              <div style={{background:'#fff',borderRadius:12,padding:16,boxShadow:'0 1px 3px #0001'}}>
+                <div style={{fontWeight:700,fontSize:13,color:'#0f172a',marginBottom:8}}>Sugerencias de optimización</div>
+                <div style={{fontSize:13,color:'#334155',lineHeight:1.7,whiteSpace:'pre-wrap'}}>{respuesta}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Costos */}
+        {modo==='costos'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            <button onClick={()=>{setModo(null);setRespuesta(null);}} style={{alignSelf:'flex-start',padding:'4px 10px',borderRadius:6,background:'#f1f5f9',color:'#64748b',border:'1px solid #e2e8f0',cursor:'pointer',fontSize:12}}>← Volver</button>
+            <div style={{background:'#fff',borderRadius:12,padding:16,boxShadow:'0 1px 3px #0001'}}>
+              <div style={{fontWeight:700,fontSize:13,color:'#0f172a',marginBottom:8}}>💰 Precio por hoja de material</div>
+              <input type="number" inputMode="numeric" value={precioPorHoja} onChange={e=>setPrecioPorHoja(e.target.value)}
+                placeholder="Ej: 850"
+                style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1.5px solid #cbd5e1',fontSize:16,outline:'none',boxSizing:'border-box',marginBottom:10}}/>
+              <button onClick={handleCostos} disabled={loading||!precioPorHoja}
+                style={{width:'100%',padding:11,borderRadius:8,background:loading||!precioPorHoja?'#94a3b8':'#6366f1',color:'#fff',border:'none',cursor:loading||!precioPorHoja?'default':'pointer',fontSize:13,fontWeight:700}}>
+                {loading?'Calculando...':'✨ Calcular costos y precio'}
+              </button>
+            </div>
+            {error&&<div style={{background:'#fee2e2',color:'#dc2626',padding:12,borderRadius:8,fontSize:13}}>{error}</div>}
+            {respuesta&&(
+              <div style={{background:'#fff',borderRadius:12,padding:16,boxShadow:'0 1px 3px #0001'}}>
+                <div style={{fontWeight:700,fontSize:13,color:'#0f172a',marginBottom:8}}>Estimación de costos</div>
+                <div style={{fontSize:13,color:'#334155',lineHeight:1.7,whiteSpace:'pre-wrap'}}>{respuesta}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+
+// ─── APP ──────────────────────────────────────────────────────────────────────
+const emptyMod = n=>({nombre:n||"Módulo 1",ancho:"",alto:"",profundidad:"",repisas:"",refuerzos:"2",lateralesMedios:"",cantCajones:"",altoCajon:"",zoclo:false,elevacion:"",cantPuertas:"",frentesCajones:[]});
+
+function AppPrincipal({ proyectoIA, onVolverBienvenida }) {
+  const [sheet, setSheet] = useState(SHEET_SIZES[0]);
+  const [material, setMaterial] = useState(proyectoIA&&proyectoIA.material?proyectoIA.material:'liso'); // 'liso' | 'veteado'
+  const [thickness, setThickness] = useState(proyectoIA&&proyectoIA.espesor?proyectoIA.espesor:15);
+  const [modules, setModules] = useState(()=>{
+    if (proyectoIA && proyectoIA.modulos && proyectoIA.modulos.length>0) {
+      return proyectoIA.modulos.map(m=>({
+        ...emptyMod(m.nombre||"Módulo"),
+        nombre: m.nombre||"Módulo",
+        ancho: String(m.ancho||""),
+        alto: String(m.alto||""),
+        profundidad: String(m.profundidad||""),
+        repisas: String(m.repisas||""),
+        refuerzos: String(m.refuerzos||"2"),
+        lateralesMedios: String(m.lateralesMedios||""),
+        cantCajones: String(m.cantCajones||""),
+        altoCajon: String(m.altoCajon||""),
+        cantPuertas: String(m.cantPuertas||""),
+        zoclo: !!m.zoclo,
+        frentesCajones: []
+      }));
+    }
+    return [emptyMod("Módulo 1")];
+  });
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState("estructura");
+  const [showListo, setShowListo] = useState(false);
+  const [showLayout, setShowLayout] = useState(false);
+  const [showPlanos, setShowPlanos] = useState(false);
+  const [showOptimizer, setShowOptimizer] = useState(false);
+  const [showIA, setShowIA] = useState(false);
+  const [piezasExtra, setPiezasExtra] = useState([]);
+  const [espacioAncho, setEspacioAncho] = useState(3600);
+  const [espacioAlto,  setEspacioAlto]  = useState(2600);
+  const [layoutPlaced,   setLayoutPlaced]   = useState([]);
+  const [layoutNextId,   setLayoutNextId]   = useState(1);
+  const [layoutSelected, setLayoutSelected] = useState(null);
+  const [layoutZoclo,    setLayoutZoclo]    = useState(100);
+  const tipos = ["techo","lateral","lateral_medio","repisa","refuerzo","cajon_frente","cajon_lateral","puerta","frente_cajon"];
+  const [cantoMap, setCantoMap] = useState({
+    0:{ techo:{a1:false,a2:false,h1:false,h2:false}, lateral:{a1:false,a2:false,h1:true,h2:false}, repisa:{a1:false,a2:false,h1:true,h2:false}, refuerzo:{a1:false,a2:false,h1:false,h2:false}, cajon_frente:{a1:false,a2:false,h1:true,h2:false}, cajon_lateral:{a1:false,a2:false,h1:true,h2:false}, lateral_medio:{a1:false,a2:false,h1:true,h2:false}, puerta:{a1:true,a2:true,h1:true,h2:true}, frente_cajon:{a1:true,a2:true,h1:true,h2:true} },
+    1:{ techo:{a1:false,a2:false,h1:false,h2:false}, lateral:{a1:false,a2:false,h1:true,h2:false}, repisa:{a1:false,a2:false,h1:true,h2:false}, refuerzo:{a1:false,a2:false,h1:false,h2:false}, cajon_frente:{a1:false,a2:false,h1:true,h2:false}, cajon_lateral:{a1:false,a2:false,h1:true,h2:false}, lateral_medio:{a1:false,a2:false,h1:true,h2:false}, puerta:{a1:true,a2:true,h1:true,h2:true}, frente_cajon:{a1:true,a2:true,h1:true,h2:true} },
+    2:{ techo:{a1:false,a2:false,h1:false,h2:false}, lateral:{a1:false,a2:false,h1:true,h2:false}, repisa:{a1:false,a2:false,h1:true,h2:false}, refuerzo:{a1:false,a2:false,h1:false,h2:false}, cajon_frente:{a1:false,a2:false,h1:true,h2:false}, cajon_lateral:{a1:false,a2:false,h1:true,h2:false}, lateral_medio:{a1:false,a2:false,h1:true,h2:false}, puerta:{a1:true,a2:true,h1:true,h2:true}, frente_cajon:{a1:true,a2:true,h1:true,h2:true} },
+    3:{ techo:{a1:false,a2:false,h1:false,h2:false}, lateral:{a1:false,a2:false,h1:true,h2:false}, repisa:{a1:false,a2:false,h1:true,h2:false}, refuerzo:{a1:false,a2:false,h1:false,h2:false}, cajon_frente:{a1:false,a2:false,h1:true,h2:false}, cajon_lateral:{a1:false,a2:false,h1:true,h2:false}, lateral_medio:{a1:false,a2:false,h1:true,h2:false}, puerta:{a1:true,a2:true,h1:true,h2:true}, frente_cajon:{a1:true,a2:true,h1:true,h2:true} },
+    4:{ techo:{a1:false,a2:false,h1:false,h2:false}, lateral:{a1:false,a2:false,h1:true,h2:false}, repisa:{a1:false,a2:false,h1:true,h2:false}, refuerzo:{a1:false,a2:false,h1:false,h2:false}, cajon_frente:{a1:false,a2:false,h1:true,h2:false}, cajon_lateral:{a1:false,a2:false,h1:true,h2:false}, lateral_medio:{a1:false,a2:false,h1:true,h2:false}, puerta:{a1:true,a2:true,h1:true,h2:true}, frente_cajon:{a1:true,a2:true,h1:true,h2:true} },
+    5:{ techo:{a1:false,a2:false,h1:false,h2:false}, lateral:{a1:false,a2:false,h1:true,h2:false}, repisa:{a1:false,a2:false,h1:true,h2:false}, refuerzo:{a1:false,a2:false,h1:false,h2:false}, cajon_frente:{a1:false,a2:false,h1:true,h2:false}, cajon_lateral:{a1:false,a2:false,h1:true,h2:false}, lateral_medio:{a1:false,a2:false,h1:true,h2:false}, puerta:{a1:true,a2:true,h1:true,h2:true}, frente_cajon:{a1:true,a2:true,h1:true,h2:true} },
+  });
+
+  const mod = modules[activeIdx];
+  const upd = (f,v) => setModules(prev=>prev.map((m,i)=>i===activeIdx?{...m,[f]:v}:m));
+
+  function addModule(){setModules(prev=>[...prev,emptyMod(("Módulo "+(prev.length+1)))]);setActiveIdx(modules.length);setActiveTab("estructura");}
+  function removeModule(idx){if(modules.length===1)return;const next=modules.filter((_,i)=>i!==idx);setModules(next);setActiveIdx(Math.min(activeIdx,next.length-1));}
+
+  const hasData      = !!(parseInt(mod.ancho)&&parseInt(mod.alto)&&parseInt(mod.profundidad));
+  const anchoInterno = hasData?parseInt(mod.ancho)-thickness*2:0;
+  const altoLateral  = hasData?parseInt(mod.alto)-thickness*2:0;
+  const anchoCajPrev = anchoInterno>0?anchoInterno-25-thickness*2-2:null;
+  const profCajPrev  = parseInt(mod.profundidad)>0?parseInt(mod.profundidad)-100:null;
+  const anyReady     = modules.some(m=>parseInt(m.ancho)&&parseInt(m.alto)&&parseInt(m.profundidad));
+  const tabSt=tabName=>({flex:1,padding:"8px 0",borderRadius:7,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,background:activeTab===tabName?"#0f172a":"#f1f5f9",color:activeTab===tabName?"#fff":"#64748b"});
+
+  const curModForList = modules[activeIdx];
+  const curModPsForList = (parseInt(curModForList.ancho)&&parseInt(curModForList.alto)&&parseInt(curModForList.profundidad)) ? calcModule(curModForList,thickness) : [];
+  const curMcForList = MOD_COLORS[activeIdx%MOD_COLORS.length];
+  const curModPieceList = curModPsForList.length > 0 ? (
+    <div style={{background:"#fff",borderRadius:12,padding:18,boxShadow:"0 1px 3px #0001",borderTop:"4px solid "+(curMcForList.border)}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+        <span style={{fontSize:11,fontWeight:800,padding:"2px 7px",borderRadius:6,background:curMcForList.bg,color:curMcForList.text,border:"1.5px solid "+(curMcForList.border)}}>{curMcForList.tag}</span>
+        <div style={{fontWeight:700,fontSize:11,color:"#0f172a",textTransform:"uppercase",letterSpacing:"0.06em"}}>Lista de piezas — {curModForList.nombre}</div>
+      </div>
+      <div style={{fontSize:11,color:"#94a3b8",marginBottom:12}}>Ancho × Alto en mm · beta horizontal</div>
+      <PiezasTable piezas={curModPsForList}/>
+      <div style={{marginTop:10,padding:"9px 12px",background:"#f8fafc",borderRadius:8,display:"flex",justifyContent:"space-between",fontSize:12}}>
+        <span style={{color:"#64748b"}}>Total de piezas:</span>
+        <span style={{fontWeight:700}}>{curModPsForList.reduce((s,p)=>s+p.qty,0)} piezas</span>
+      </div>
+    </div>
+  ) : null;
+
+  if (showListo) return <ProyectoListo modules={modules} thickness={thickness} cantoMapProp={cantoMap} setCantoMapProp={setCantoMap} piezasExtra={piezasExtra} onClose={()=>setShowListo(false)} onGoLayout={()=>{setShowListo(false);setShowLayout(true);}}/>;
+  if (showIA) return <AsistenteIA modules={modules} thickness={thickness} sheet={sheet} piezasExtra={piezasExtra} onAddModules={(newMods)=>{setModules(prev=>[...prev,...newMods]);setShowIA(false);}} onClose={()=>setShowIA(false)}/>;
+  if (showOptimizer) return <OptimizadorCorte modules={modules} thickness={thickness} sheetSize={sheet} material={material} piezasExtraInit={piezasExtra} onSavePiezasExtra={setPiezasExtra} onClose={()=>setShowOptimizer(false)}/>;
+  if (showPlanos) return <PlanosImprimir modules={modules} thickness={thickness} onClose={()=>setShowPlanos(false)}/>;
+  if (showLayout) return <LayoutMuebles modules={modules} espacioAnchoInit={espacioAncho} espacioAltoInit={espacioAlto} placedInit={layoutPlaced} nextIdInit={layoutNextId} selectedInit={layoutSelected} zocloAltoInit={layoutZoclo} onClose={()=>setShowLayout(false)} onSaveEspacio={(a,h)=>{setEspacioAncho(a);setEspacioAlto(h);}} onSaveLayout={(pl,nid,sel,za)=>{setLayoutPlaced(pl);setLayoutNextId(nid);setLayoutSelected(sel);setLayoutZoclo(za);}}/>;
+
+  return(
+    <div style={{minHeight:"100vh",background:"#f1f5f9",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+      <div style={{background:"#0f172a",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
+          <button onClick={()=>setShowIA(true)}
+            style={{padding:"12px 18px",borderRadius:12,background:"#6366f1",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:800,boxShadow:"0 2px 8px #6366f155",display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:72}}>
+            <span style={{fontSize:20}}>🤖</span>
+            <span>IA</span>
+          </button>
+          {anyReady&&(
+            <button onClick={()=>setShowOptimizer(true)}
+              style={{padding:"12px 18px",borderRadius:12,background:"#be185d",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:800,boxShadow:"0 2px 8px #be185d55",display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:72}}>
+              <span style={{fontSize:20}}>✂️</span>
+              <span>Corte</span>
+            </button>
+          )}
+          {anyReady&&(
+            <button onClick={()=>setShowPlanos(true)}
+              style={{padding:"12px 18px",borderRadius:12,background:"#0369a1",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:800,boxShadow:"0 2px 8px #0369a155",display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:72}}>
+              <span style={{fontSize:20}}>🖨️</span>
+              <span>Planos</span>
+            </button>
+          )}
+          {anyReady&&(
+            <button onClick={()=>setShowLayout(true)}
+              style={{padding:"12px 18px",borderRadius:12,background:"#7c3aed",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:800,boxShadow:"0 2px 8px #7c3aed55",display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:72}}>
+              <span style={{fontSize:20}}>📐</span>
+              <span>Layout</span>
+            </button>
+          )}
+          {anyReady&&(
+            <button onClick={()=>setShowListo(true)}
+              style={{padding:"12px 18px",borderRadius:12,background:"#16a34a",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:800,boxShadow:"0 2px 8px #16a34a55",display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:72}}>
+              <span style={{fontSize:20}}>🪚</span>
+              <span>Cubrecanto</span>
+            </button>
+          )}
+      </div>
+
+      <div style={{maxWidth:1160,margin:"0 auto",padding:"20px 16px",display:"flex",gap:18,flexWrap:"wrap"}}>
+        <div style={{flex:"0 0 300px",display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{background:"#fff",borderRadius:12,padding:18,boxShadow:"0 1px 3px #0001"}}>
+            <div style={{fontWeight:700,fontSize:11,color:"#0f172a",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}}>⚙️ Configuración</div>
+            <label style={{fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:5}}>Tamaño de hoja</label>
+            {SHEET_SIZES.map(s=>(
+              <label key={s.label} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,cursor:"pointer",background:sheet.label===s.label?"#eff6ff":"transparent",border:"1.5px solid "+(sheet.label===s.label?"#2563eb":"#e2e8f0"),marginBottom:5}}>
+                <input type="radio" checked={sheet.label===s.label} onChange={()=>setSheet(s)} style={{accentColor:"#2563eb"}}/>
+                <span style={{fontSize:13,fontWeight:sheet.label===s.label?700:400,color:sheet.label===s.label?"#2563eb":"#334155"}}>{s.label}</span>
+              </label>
+            ))}
+            <label style={{fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginTop:10,marginBottom:5}}>Material</label>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              {[{v:"liso",label:"🎨 Liso",sub:"Rotación libre"},{v:"veteado",label:"🪵 Veteado",sub:"Sin rotación"}].map(opt=>(
+                <label key={opt.v} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 6px",borderRadius:7,cursor:"pointer",background:material===opt.v?"#eff6ff":"#f8fafc",border:"1.5px solid "+(material===opt.v?"#2563eb":"#e2e8f0"),gap:2}}>
+                  <input type="radio" checked={material===opt.v} onChange={()=>setMaterial(opt.v)} style={{display:"none"}}/>
+                  <span style={{fontSize:16}}>{opt.label.split(" ")[0]}</span>
+                  <span style={{fontSize:12,fontWeight:material===opt.v?700:400,color:material===opt.v?"#2563eb":"#334155"}}>{opt.label.split(" ")[1]}</span>
+                  <span style={{fontSize:9,color:"#94a3b8"}}>{opt.sub}</span>
+                </label>
+              ))}
+            </div>
+            <label style={{fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginTop:10,marginBottom:5}}>Espesor</label>
+            <div style={{display:"flex",gap:8}}>
+              {THICKNESSES.map(thk=>(
+                <button key={thk} onClick={()=>setThickness(thk)} style={{flex:1,padding:"8px 0",borderRadius:7,border:thickness===thk?"2px solid #2563eb":"1.5px solid #e2e8f0",background:thickness===thk?"#eff6ff":"#f8fafc",color:thickness===thk?"#2563eb":"#334155",fontWeight:thickness===thk?700:400,fontSize:14,cursor:"pointer"}}>{thk} mm</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{background:"#fff",borderRadius:12,padding:18,boxShadow:"0 1px 3px #0001"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontWeight:700,fontSize:11,color:"#0f172a",textTransform:"uppercase",letterSpacing:"0.06em"}}>📦 Módulos</div>
+              <button onClick={addModule} style={{padding:"4px 11px",borderRadius:6,background:"#0f172a",color:"#fff",border:"none",cursor:"pointer",fontSize:12,fontWeight:600}}>+ Agregar</button>
+            </div>
+            {modules.map((m,i)=>{
+              const mc=MOD_COLORS[i%MOD_COLORS.length];
+              return(
+                <div key={"r"+i} onClick={()=>{setActiveIdx(i);setActiveTab("estructura");}}
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 11px",borderRadius:8,cursor:"pointer",marginBottom:5,background:activeIdx===i?"#0f172a":"#f8fafc",border:"1.5px solid "+(activeIdx===i?"#0f172a":mc.border)}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7}}>
+                    <span style={{fontSize:10,fontWeight:800,padding:"1px 5px",borderRadius:5,background:mc.bg,color:mc.text,border:"1px solid "+(mc.border)}}>{mc.tag}</span>
+                    <span style={{fontSize:13,fontWeight:600,color:activeIdx===i?"#fff":"#334155"}}>{m.nombre||("Módulo "+(i+1))}</span>
+                  </div>
+                  {modules.length>1&&<button onClick={e=>{e.stopPropagation();removeModule(i);}} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:15}}>×</button>}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{background:"#fff",borderRadius:12,padding:18,boxShadow:"0 1px 3px #0001"}}>
+            <div style={{fontWeight:700,fontSize:11,color:"#0f172a",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}}>📐 {mod.nombre}</div>
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              <button style={tabSt("estructura")} onClick={()=>setActiveTab("estructura")}>🗂 Estructura</button>
+              <button style={tabSt("cajones")}    onClick={()=>setActiveTab("cajones")}>🗄 Cajones</button>
+              <button style={tabSt("puertas")}    onClick={()=>setActiveTab("puertas")}>🚪 Puertas</button>
+            </div>
+            {activeTab==="estructura"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div>
+                  <label style={{fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Nombre</label>
+                  <input value={mod.nombre} onChange={e=>upd("nombre",e.target.value)} style={{padding:"7px 10px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:14,width:"100%",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+                </div>
+                <InputField label="Ancho"       value={mod.ancho}       onChange={v=>upd("ancho",v)}       suffix="mm"/>
+                <InputField label="Alto"        value={mod.alto}        onChange={v=>upd("alto",v)}        suffix="mm"/>
+                <InputField label="Profundidad" value={mod.profundidad} onChange={v=>upd("profundidad",v)} suffix="mm"/>
+                <div style={{display:"flex",gap:8}}>
+                  <div style={{flex:1}}><InputField label="Entrepaños" value={mod.repisas}   onChange={v=>upd("repisas",v)}/></div>
+                  <div style={{flex:1}}><InputField label="Refuerzos"  value={mod.refuerzos} onChange={v=>upd("refuerzos",v)}/></div>
+                </div>
+                <InputField label="Lat. Medios" value={mod.lateralesMedios} onChange={v=>upd("lateralesMedios",v)}/>
+                {!parseInt(mod.elevacion) && (
+                  <label style={{display:"flex",alignItems:"center",gap:8,padding:"8px 11px",borderRadius:8,cursor:"pointer",background:mod.zoclo?"#fef9c3":"#f8fafc",border:"1.5px solid "+(mod.zoclo?"#ca8a04":"#e2e8f0")}}>
+                    <input type="checkbox" checked={!!mod.zoclo} onChange={e=>upd("zoclo",e.target.checked)} style={{width:16,height:16,accentColor:"#ca8a04",cursor:"pointer"}}/>
+                    <span style={{fontSize:12,fontWeight:600,color:mod.zoclo?"#713f12":"#64748b"}}>🦶 Lleva zóclo</span>
+                  </label>
+                )}
+                {hasData&&<div style={{padding:"9px 11px",background:"#f0fdf4",borderRadius:8,fontSize:11,color:"#14532d",lineHeight:1.8}}>Ancho interno: <b>{anchoInterno} mm</b>&nbsp;·&nbsp;Alto lateral: <b>{altoLateral} mm</b></div>}
+              </div>
+            )}
+            {activeTab==="cajones"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{display:"flex",gap:8}}>
+                  <div style={{flex:1}}><InputField label="Cantidad" value={mod.cantCajones} onChange={v=>upd("cantCajones",v)}/></div>
+                  <div style={{flex:1}}><InputField label="Alto cajón" value={mod.altoCajon} onChange={v=>upd("altoCajon",v)} suffix="mm"/></div>
+                </div>
+                {anchoCajPrev!==null&&parseInt(mod.altoCajon)>0&&(
+                  <div style={{padding:"9px 12px",background:"#e0e7ff",borderRadius:8,fontSize:11,color:"#3730a3",lineHeight:1.8}}>
+                    <b>Frente/Fondo:</b> {anchoInterno}−25−{thickness*2}−2 = <b>{anchoCajPrev} mm</b><br/>
+                    <b>Lateral cajón:</b> {mod.profundidad}−100 = <b>{profCajPrev} mm</b><br/>
+                    <b>Base (otro mat.):</b> {anchoInterno-25} × {profCajPrev} mm
+                  </div>
+                )}
+                {!hasData&&<div style={{color:"#94a3b8",fontSize:12}}>Primero ingresá las medidas en Estructura.</div>}
+              </div>
+            )}
+            {activeTab==="puertas"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {/* Puertas */}
+                <div style={{padding:"10px 12px",background:"#f0f9ff",borderRadius:8,border:"1px solid #0284c7"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#0c4a6e",marginBottom:8}}>🚪 Puertas batientes</div>
+                  <InputField label="Cantidad de puertas" value={mod.cantPuertas} onChange={v=>upd("cantPuertas",v)}/>
+                  {parseInt(mod.cantPuertas)>0&&hasData&&(()=>{
+                    const ap=Math.round(parseInt(mod.ancho)/parseInt(mod.cantPuertas))-3;
+                    const alt=parseInt(mod.alto)-4;
+                    return(
+                      <div style={{marginTop:8,padding:"8px 10px",background:"#e0f2fe",borderRadius:6,fontSize:11,color:"#0c4a6e",lineHeight:1.8}}>
+                        <b>Cada puerta:</b> {ap} × {alt} mm<br/>
+                        <span style={{color:"#0284c7",fontSize:10}}>({mod.ancho}÷{mod.cantPuertas})−3 × {mod.alto}−5</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+                {/* Frentes de cajón */}
+                <div style={{padding:"10px 12px",background:"#fdf4ff",borderRadius:8,border:"1px solid #a855f7"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#581c87",marginBottom:8}}>🗄 Frentes de cajón</div>
+                  {(mod.frentesCajones||[]).map((fc,idx)=>(
+                    <div key={idx} style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:8,padding:"8px 10px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0"}}>
+                      <div style={{flex:1}}>
+                        <label style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase",display:"block",marginBottom:3}}>Alto (mm)</label>
+                        <input type="number" inputMode="numeric" value={fc.alto} onChange={e=>upd("frentesCajones",(mod.frentesCajones||[]).map((f,i)=>i===idx?{...f,alto:e.target.value}:f))}
+                          style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:13,width:"100%",outline:"none",background:"#fff",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                      </div>
+                      <div style={{flex:1}}>
+                        <label style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase",display:"block",marginBottom:3}}>Cant.</label>
+                        <input type="number" inputMode="numeric" value={fc.qty} onChange={e=>upd("frentesCajones",(mod.frentesCajones||[]).map((f,i)=>i===idx?{...f,qty:e.target.value}:f))}
+                          style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:13,width:"100%",outline:"none",background:"#fff",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                      </div>
+                      {hasData&&parseInt(fc.alto)>0&&(
+                        <div style={{fontSize:10,color:"#7c3aed",padding:"0 4px",flexShrink:0,lineHeight:1.4,textAlign:"right"}}>
+                          {parseInt(mod.ancho)-4}<br/>×{fc.alto}
+                        </div>
+                      )}
+                      <button onClick={()=>upd("frentesCajones",(mod.frentesCajones||[]).filter((_,i)=>i!==idx))}
+                        style={{padding:"6px 9px",background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:6,cursor:"pointer",fontSize:13,fontWeight:700,flexShrink:0}}>×</button>
+                    </div>
+                  ))}
+                  <button onClick={()=>upd("frentesCajones",[...(mod.frentesCajones||[]),{alto:"",qty:"1"}])}
+                    style={{width:"100%",padding:8,borderRadius:7,border:"1.5px dashed #c084fc",background:"#fdf4ff",color:"#7c3aed",fontWeight:600,fontSize:13,cursor:"pointer"}}>
+                    + Agregar frente
+                  </button>
+                  {hasData&&(mod.frentesCajones||[]).length>0&&(
+                    <div style={{marginTop:6,fontSize:10,color:"#9333ea"}}>Ancho = {parseInt(mod.ancho)-4} mm (ancho módulo − 4)</div>
+                  )}
+                </div>
+                {!hasData&&<div style={{color:"#94a3b8",fontSize:12}}>Primero ingresá las medidas en Estructura.</div>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{flex:1,minWidth:300,display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{background:"#fff",borderRadius:12,padding:18,boxShadow:"0 1px 3px #0001"}}>
+            <div style={{fontWeight:700,fontSize:11,color:"#0f172a",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}}>🖼️ Vista frontal — {mod.nombre}</div>
+            {hasData?(
+              <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"flex-start"}}>
+                <ModuleCanvas mod={mod} thickness={thickness}/>
+                <div style={{flex:1,minWidth:160}}>
+                  <div style={{fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Leyenda</div>
+                  {Object.entries(TIPO_COLOR).map(([tipo,col])=>(
+                    <div key={tipo} style={{display:"flex",alignItems:"center",gap:7,marginBottom:5}}>
+                      <span style={{display:"inline-block",width:13,height:13,borderRadius:3,background:col.fill,border:"2px solid "+(col.stroke),flexShrink:0}}/>
+                      <span style={{fontSize:11,color:"#334155"}}>{LEYENDA_LABELS[tipo]}</span>
+                    </div>
+                  ))}
+                  <div style={{marginTop:14,padding:11,background:"#f8fafc",borderRadius:8,fontSize:12,lineHeight:1.8}}>
+                    <div style={{fontWeight:700,color:"#0f172a",marginBottom:2}}>Medidas internas</div>
+                    <div style={{color:"#64748b"}}>Ancho interno</div><div style={{fontWeight:700}}>{anchoInterno} mm</div>
+                    <div style={{color:"#64748b"}}>Alto lateral</div><div style={{fontWeight:700}}>{altoLateral} mm</div>
+                  </div>
+                </div>
+              </div>
+            ):(
+              <div style={{textAlign:"center",padding:"36px 20px",color:"#94a3b8",fontSize:14}}>Ingresá las medidas del módulo para ver la vista</div>
+            )}
+          </div>
+
+          {curModPieceList}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ── ROOT: controla qué pantalla mostrar ──
+function App() {
+  const db = usePreciosDB();
+  const [pantalla, setPantalla] = useState("bienvenida");
+  const [proyectoIA, setProyectoIA] = useState(null);
+
+  function handleProyectoListo(proyecto) {
+    setProyectoIA(proyecto);
+    setPantalla("app");
+  }
+
+  if (pantalla === "bienvenida") {
+    return <Bienvenida db={db} onProyectoListo={handleProyectoListo}/>;
+  }
+
+  return <AppPrincipal proyectoIA={proyectoIA} onVolverBienvenida={()=>setPantalla("bienvenida")}/>;
+}
+
+const container=document.getElementById('root');
+const root=ReactDOM.createRoot(container);
+root.render(React.createElement(App));
+document.getElementById('loading').style.display='none';
+</script>
+</body>
+</html>
